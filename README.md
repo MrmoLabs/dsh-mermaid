@@ -1,96 +1,95 @@
 # dsh-mermaid
 
-在 DeepSeek Harness Web 会话中把 Mermaid 围栏代码块渲染为 SVG 图形，并提供“图 / 代码”双向切换。支持流式输出、深色主题和渲染失败后自动回退到代码。
+[简体中文](README.zh-CN.md) | English
 
-## 特性
+Render Mermaid fenced code blocks in DeepSeek Harness Web as SVG diagrams with a **Diagram / Code** toggle. The plugin supports streaming responses, dark mode, and automatic fallback to source code when rendering fails.
 
-- 支持 `mermaid`、`mermaidjs`、`mmd` 围栏代码块
-- 兼容 DSH/Shiki plain fallback（代码元素可能没有 language class）
-- Mermaid 固定为 `11.17.0` 并打入客户端产物，不依赖运行时 CDN
-- 使用 Mermaid `securityLevel: strict`
-- 只增强 `<pre><code>` 代码块，不处理行内代码
-- 使用渲染 generation 防止流式输出中的旧结果覆盖新结果
+Current version: **0.1.0**
 
-## 开发与验证
+## Features
 
-要求 Node.js 22.19 或更高版本。
+- Supports `mermaid`, `mermaidjs`, and `mmd` fenced code blocks
+- Works with the DSH/Shiki plain fallback, where code elements may not have a language class
+- Bundles the exact Mermaid `11.17.0` release and requires no runtime CDN
+- Uses Mermaid's `securityLevel: strict`
+- Enhances only `<pre><code>` blocks and ignores inline code
+- Prevents stale asynchronous renders from overwriting newer streaming content
 
-```powershell
-npm.cmd install
-npm.cmd run check
-npm.cmd run build
-```
+## Install
 
-构建产物位于 `lib/`，并由 DSH 客户端模块加载器注册为 `dsh-mermaid`。
-
-## 一条命令安装
-
-发布到 npm 后，已全局安装 DSH 的用户运行：
+If `dsh` is available globally, install the stable npm release with:
 
 ```powershell
 dsh plugin --profile web add -w dsh-mermaid
 ```
 
-没有全局 `dsh` 命令时，可以直接通过 npm/npx 调用：
+Without a global `dsh` command, invoke DSH through npx:
 
 ```powershell
 npx.cmd --yes @deepseek-ai/dsh plugin --profile web add -w dsh-mermaid
 ```
 
-DSH 会通过 pnpm 安装包，识别包内的 `dsh.bundle` 声明，并自动把 `dsh-mermaid` 加入 web profile 的 bundles。安装后重启 DSH Web 或刷新页面。
+DSH installs the package through pnpm, detects its `dsh.bundle` declaration, and automatically adds `dsh-mermaid` to the web profile bundle list. Restart DSH Web or refresh the page after installation.
 
-升级：
-
-```powershell
-dsh plugin --profile web update dsh-mermaid
-```
-
-卸载：
-
-```powershell
-dsh plugin --profile web remove dsh-mermaid
-```
-
-也可以直接从 GitHub 安装最新源码版本：
+### Install the latest GitHub source
 
 ```powershell
 npx.cmd -y github:MrmoLabs/dsh-mermaid install
 ```
 
-这条命令会运行仓库提供的 `dsh-mermaid` 安装器，再调用 DSH 将 GitHub 源安装进 web profile。GitHub 源需要在安装阶段执行构建；如果 pnpm 提示阻止了 build script，请按它输出的精确包名加入 profile 的 `pnpm-workspace.yaml` `allowBuilds`，然后重新执行命令。普通用户优先使用 npm 稳定版。
+This runs the repository's `dsh-mermaid` installer, which asks DSH to install the GitHub source into the web profile. GitHub installation builds the package during installation. If pnpm reports that it blocked a build script, add the exact package key shown by pnpm to `allowBuilds` in the profile's `pnpm-workspace.yaml`, then run the command again. Prefer the npm release for normal use.
 
-## 从本地源码安装
+## Update and uninstall
 
-在项目目录运行：
+Update the npm release:
 
 ```powershell
-npm.cmd install
-npm.cmd run build
-dsh plugin --profile web add -w .
+dsh plugin --profile web update dsh-mermaid
 ```
 
-DSH 会把相对路径解析为当前插件项目的绝对路径。也可以手动复制构建后的包到：
+Uninstall:
 
-```text
-C:\Users\<用户名>\.dsh\profiles\web\node_modules\dsh-mermaid
+```powershell
+dsh plugin --profile web remove -w dsh-mermaid
 ```
 
-不要把整个 `.dsh` 目录提交到 Git，其中可能包含会话和凭据。
+Restart DSH Web after updating or uninstalling.
 
-## 使用
+## Usage
 
-让模型输出：
+Ask a model to output a Mermaid fenced code block:
 
 ````markdown
 ```mermaid
 flowchart LR
-  A[代码] --> B[图形]
+  A[Code] --> B[Diagram]
 ```
 ````
 
-代码块上方会出现“图 / 代码”按钮，默认显示图形。
+The code block receives **Diagram / Code** controls and opens in diagram view by default.
 
-## 发布检查
+## Develop from source
+
+Node.js 22.19 or later is required.
+
+```powershell
+npm.cmd install
+npm.cmd run check
+npm.cmd run build
+dsh plugin --profile web add -w .
+```
+
+Build output is written to `lib/` and registered with the DSH client module loader as `dsh-mermaid`. DSH resolves the relative installation path against the current plugin checkout.
+
+For manual local development, the built package can also be copied to:
+
+```text
+C:\Users\<username>\.dsh\profiles\web\node_modules\dsh-mermaid
+```
+
+Never commit the complete `.dsh` directory. It may contain conversations and credentials.
+
+## Release checks
 
 ```powershell
 npm.cmd run check
@@ -100,6 +99,6 @@ git status --short
 git diff --cached
 ```
 
-## 许可证
+## License
 
 [MIT](LICENSE)
