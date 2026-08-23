@@ -23,17 +23,51 @@ npm.cmd run build
 
 构建产物位于 `lib/`，并由 DSH 客户端模块加载器注册为 `dsh-mermaid`。
 
-## 安装到 DSH Web Profile
+## 一条命令安装
 
-在插件项目目录完成构建后，将包安装到 web profile，并确保 profile 的 `dsh.profile.bundles` 包含 `dsh-mermaid`。具体安装命令可能随 DSH 版本变化，请以当前 DSH 插件管理命令为准。
+发布到 npm 后，已全局安装 DSH 的用户运行：
 
-本地开发时，也可以把整个项目复制到：
+```powershell
+dsh plugin --profile web add dsh-mermaid
+```
+
+没有全局 `dsh` 命令时，可以直接通过 npm/npx 调用：
+
+```powershell
+npx.cmd --yes @deepseek-ai/dsh plugin --profile web add dsh-mermaid
+```
+
+DSH 会通过 pnpm 安装包，识别包内的 `dsh.bundle` 声明，并自动把 `dsh-mermaid` 加入 web profile 的 bundles。安装后重启 DSH Web 或刷新页面。
+
+升级：
+
+```powershell
+dsh plugin --profile web update dsh-mermaid
+```
+
+卸载：
+
+```powershell
+dsh plugin --profile web remove dsh-mermaid
+```
+
+## 从本地源码安装
+
+在项目目录运行：
+
+```powershell
+npm.cmd install
+npm.cmd run build
+dsh plugin --profile web add .
+```
+
+DSH 会把相对路径解析为当前插件项目的绝对路径。也可以手动复制构建后的包到：
 
 ```text
 C:\Users\<用户名>\.dsh\profiles\web\node_modules\dsh-mermaid
 ```
 
-然后重启或强制刷新 DSH Web 页面。不要把整个 `.dsh` 目录提交到 Git，其中可能包含会话和凭据。
+不要把整个 `.dsh` 目录提交到 Git，其中可能包含会话和凭据。
 
 ## 使用
 
