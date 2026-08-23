@@ -1,0 +1,4 @@
+# Insert the dual-face plugin into the DSH web profile roster.
+- insert:
+    - id: ui-mermaid
+      name: 'dsh-mermaid'
