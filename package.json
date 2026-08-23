@@ -1,6 +1,6 @@
 {
   "name": "dsh-mermaid",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Render Mermaid code blocks in DeepSeek Harness with a diagram/code toggle.",
   "author": {
     "name": "Mrmo072",
@@ -29,15 +29,16 @@
     "bin",
     "lib",
     "cordis.patch.yml",
+    "CHANGELOG.md",
     "README.md",
     "README.zh-CN.md",
     "LICENSE"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "node --check src/client.js && node --check src/index.js && node --test",
+    "check": "node --check bin/dsh-mermaid.mjs && node --check scripts/build.mjs && node --check src/client.js && node --check src/detection.js && node --check src/index.js && node --test",
     "prepare": "npm run build",
-    "prepack": "npm run check && npm run build"
+    "prepack": "npm run check"
   },
   "dsh": {
     "bundle": {
@@ -55,11 +56,9 @@
     "diagram"
   ],
   "license": "MIT",
-  "dependencies": {
-    "mermaid": "11.17.0"
-  },
   "devDependencies": {
-    "esbuild": "0.25.9"
+    "esbuild": "0.28.2",
+    "mermaid": "11.17.0"
   },
   "engines": {
     "node": ">=22.19.0"

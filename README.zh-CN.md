@@ -4,7 +4,7 @@
 
 在 DeepSeek Harness Web 会话中把 Mermaid 围栏代码块渲染为 SVG 图形，并提供**图形 / 代码**双向切换。插件支持流式输出、深色主题，并在渲染失败时自动回退到源代码。
 
-当前版本：**0.1.0**
+[![npm version](https://img.shields.io/npm/v/dsh-mermaid.svg)](https://www.npmjs.com/package/dsh-mermaid)
 
 ## 功能特性
 
@@ -44,7 +44,7 @@ npx.cmd -y github:MrmoLabs/dsh-mermaid install
 更新 npm 稳定版：
 
 ```powershell
-dsh plugin --profile web update dsh-mermaid
+dsh plugin --profile web update -w dsh-mermaid
 ```
 
 卸载：

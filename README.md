@@ -4,7 +4,7 @@
 
 Render Mermaid fenced code blocks in DeepSeek Harness Web as SVG diagrams with a **Diagram / Code** toggle. The plugin supports streaming responses, dark mode, and automatic fallback to source code when rendering fails.
 
-Current version: **0.1.0**
+[![npm version](https://img.shields.io/npm/v/dsh-mermaid.svg)](https://www.npmjs.com/package/dsh-mermaid)
 
 ## Features
 
@@ -44,7 +44,7 @@ This runs the repository's `dsh-mermaid` installer, which asks DSH to install th
 Update the npm release:
 
 ```powershell
-dsh plugin --profile web update dsh-mermaid
+dsh plugin --profile web update -w dsh-mermaid
 ```
 
 Uninstall:
