@@ -2,8 +2,21 @@
   "name": "dsh-mermaid",
   "version": "0.1.0",
   "description": "Render Mermaid code blocks in DeepSeek Harness with a diagram/code toggle.",
+  "author": {
+    "name": "Mrmo072",
+    "url": "https://github.com/MrmoLabs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MrmoLabs/dsh-mermaid.git"
+  },
+  "homepage": "https://github.com/MrmoLabs/dsh-mermaid#readme",
+  "bugs": "https://github.com/MrmoLabs/dsh-mermaid/issues",
   "publishConfig": {
     "access": "public"
+  },
+  "bin": {
+    "dsh-mermaid": "bin/dsh-mermaid.mjs"
   },
   "type": "module",
   "main": "lib/index.js",
@@ -13,6 +26,7 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "bin",
     "lib",
     "cordis.patch.yml",
     "README.md",
@@ -21,6 +35,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node --check src/client.js && node --check src/index.js && node --test",
+    "prepare": "npm run build",
     "prepack": "npm run check && npm run build"
   },
   "dsh": {

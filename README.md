@@ -28,13 +28,13 @@ npm.cmd run build
 发布到 npm 后，已全局安装 DSH 的用户运行：
 
 ```powershell
-dsh plugin --profile web add dsh-mermaid
+dsh plugin --profile web add -w dsh-mermaid
 ```
 
 没有全局 `dsh` 命令时，可以直接通过 npm/npx 调用：
 
 ```powershell
-npx.cmd --yes @deepseek-ai/dsh plugin --profile web add dsh-mermaid
+npx.cmd --yes @deepseek-ai/dsh plugin --profile web add -w dsh-mermaid
 ```
 
 DSH 会通过 pnpm 安装包，识别包内的 `dsh.bundle` 声明，并自动把 `dsh-mermaid` 加入 web profile 的 bundles。安装后重启 DSH Web 或刷新页面。
@@ -51,6 +51,14 @@ dsh plugin --profile web update dsh-mermaid
 dsh plugin --profile web remove dsh-mermaid
 ```
 
+也可以直接从 GitHub 安装最新源码版本：
+
+```powershell
+npx.cmd -y github:MrmoLabs/dsh-mermaid install
+```
+
+这条命令会运行仓库提供的 `dsh-mermaid` 安装器，再调用 DSH 将 GitHub 源安装进 web profile。GitHub 源需要在安装阶段执行构建；如果 pnpm 提示阻止了 build script，请按它输出的精确包名加入 profile 的 `pnpm-workspace.yaml` `allowBuilds`，然后重新执行命令。普通用户优先使用 npm 稳定版。
+
 ## 从本地源码安装
 
 在项目目录运行：
@@ -58,7 +66,7 @@ dsh plugin --profile web remove dsh-mermaid
 ```powershell
 npm.cmd install
 npm.cmd run build
-dsh plugin --profile web add .
+dsh plugin --profile web add -w .
 ```
 
 DSH 会把相对路径解析为当前插件项目的绝对路径。也可以手动复制构建后的包到：
