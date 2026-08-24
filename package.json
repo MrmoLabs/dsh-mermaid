@@ -58,6 +58,7 @@
   "license": "MIT",
   "devDependencies": {
     "esbuild": "0.28.2",
+    "happy-dom": "20.11.6",
     "mermaid": "11.17.0"
   },
   "engines": {
