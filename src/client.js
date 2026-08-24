@@ -31,15 +31,24 @@ const CSS = `
 
 let uid = 0;
 let styleTag = null;
+let mermaidRuntime = mermaid;
 const entries = new WeakMap();
 const wrappers = new Set();
+
+function setMermaidRuntimeForTesting(runtime) {
+  const previous = mermaidRuntime;
+  mermaidRuntime = runtime;
+  return () => {
+    mermaidRuntime = previous;
+  };
+}
 
 function isDark() {
   return document.body?.hasAttribute('data-ds-dark-theme') ?? false;
 }
 
 function initializeMermaid() {
-  mermaid.initialize({
+  mermaidRuntime.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
     theme: isDark() ? 'dark' : 'default',
@@ -145,7 +154,7 @@ async function renderDiagram(entry) {
   try {
     initializeMermaid();
     const id = `dsh-mmd-${++uid}`;
-    const { svg, bindFunctions } = await mermaid.render(id, source);
+    const { svg, bindFunctions } = await mermaidRuntime.render(id, source);
     if (generation !== entry.renderGeneration || !entry.wrapper.isConnected) return;
     if ((entry.code.textContent || '').trim() !== source) return;
     entry.pane.innerHTML = svg;
@@ -260,4 +269,4 @@ function apply(ctx) {
 }
 
 const inject = [];
-export { inject, apply };
+export { inject, apply, setMermaidRuntimeForTesting };

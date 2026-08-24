@@ -25,8 +25,18 @@ test('enhances, updates, switches, and disposes a Mermaid code block', async () 
   }
 
   let dispose;
+  let restoreMermaidRuntime;
   try {
-    const { apply } = await import(`../src/client.js?dom-test=${Date.now()}`);
+    const { apply, setMermaidRuntimeForTesting } = await import(`../src/client.js?dom-test=${Date.now()}`);
+    const renderCalls = [];
+    restoreMermaidRuntime = setMermaidRuntimeForTesting({
+      initialize() {},
+      async render(_id, source) {
+        renderCalls.push(source);
+        if (source.endsWith('-->')) throw new Error('synthetic Mermaid failure');
+        return { svg: `<svg data-source-length="${source.length}"></svg>` };
+      },
+    });
     const ctx = {
       effect(callback) {
         dispose = callback();
@@ -48,6 +58,8 @@ test('enhances, updates, switches, and disposes a Mermaid code block', async () 
     assert.equal(card.nextElementSibling, pre);
     assert.equal(card.dataset.view, 'diagram', card.querySelector('.dsh-mmd-pane')?.textContent);
     assert.equal(card.querySelector('.dsh-mmd-pane')?.dataset.state, 'ok');
+    assert.equal(card.querySelectorAll('.dsh-mmd-pane svg').length, 1);
+    assert.deepEqual(renderCalls, ['flowchart LR\nA-->B']);
 
     const buttons = card.querySelectorAll('.dsh-mmd-btn');
     buttons[1].click();
@@ -56,8 +68,11 @@ test('enhances, updates, switches, and disposes a Mermaid code block', async () 
     assert.equal(card.querySelector('.dsh-mmd-code')?.textContent, 'flowchart LR\nA-->B');
 
     code.textContent = 'flowchart LR\nA-->C';
+    code.textContent = 'flowchart LR\nA-->D';
+    code.textContent = 'flowchart LR\nA-->E';
     await wait(700);
-    assert.equal(card.querySelector('.dsh-mmd-code')?.textContent, 'flowchart LR\nA-->C');
+    assert.equal(card.querySelector('.dsh-mmd-code')?.textContent, 'flowchart LR\nA-->E');
+    assert.deepEqual(renderCalls, ['flowchart LR\nA-->B', 'flowchart LR\nA-->E']);
 
     const invalidPre = document.createElement('pre');
     const invalidCode = document.createElement('code');
@@ -79,6 +94,7 @@ test('enhances, updates, switches, and disposes a Mermaid code block', async () 
     assert.equal(document.getElementById('dsh-mermaid/css'), null);
   } finally {
     dispose?.();
+    restoreMermaidRuntime?.();
     await window.happyDOM.abort();
     for (const [name, descriptor] of previousGlobals) {
       if (descriptor === undefined) delete globalThis[name];
