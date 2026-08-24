@@ -65,7 +65,7 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
           }
           const renderName = source.includes('FAST') ? 'fast' : 'normal';
           return {
-            svg: `<svg data-render="${renderName}" data-source-length="${source.length}"><defs><marker id="arrow"><path></path></marker></defs><path marker-end="url(#arrow)"></path></svg>`,
+            svg: `<svg id="diagram" data-render="${renderName}" data-source-length="${source.length}"><defs><marker id="arrow"><path></path></marker></defs><path class="node" marker-end="url(#arrow)"></path></svg>`,
           };
         } finally {
           activeRenders -= 1;
@@ -96,6 +96,11 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.equal(card.querySelectorAll('.dsh-mmd-pane svg').length, 1);
     assert.deepEqual(renderCalls, ['flowchart LR\nA-->B']);
 
+    const originalSvg = card.querySelector('.dsh-mmd-pane svg');
+    const embeddedStyle = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    embeddedStyle.textContent = '#diagram .node{fill:red}.edge{marker-end:url(#arrow)}';
+    originalSvg.prepend(embeddedStyle);
+
     const buttons = card.querySelectorAll('.dsh-mmd-btn');
     buttons[2].click();
     const viewer = document.querySelector('.dsh-mmd-viewer');
@@ -105,14 +110,19 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.equal(window.getComputedStyle(viewer).backgroundColor, '#fff');
     assert.equal(viewer.querySelectorAll('.dsh-mmd-viewer-stage svg').length, 1);
     const originalMarkerId = card.querySelector('.dsh-mmd-pane marker')?.id;
-    const viewerMarker = viewer.querySelector('.dsh-mmd-viewer-stage marker');
+    const viewerSvg = viewer.querySelector('.dsh-mmd-viewer-stage svg');
+    const viewerMarker = viewerSvg?.querySelector('marker');
     assert.ok(originalMarkerId);
+    assert.notEqual(viewerSvg?.id, card.querySelector('.dsh-mmd-pane svg')?.id);
     assert.ok(viewerMarker?.id);
     assert.notEqual(viewerMarker.id, originalMarkerId);
     assert.equal(
       viewer.querySelector('.dsh-mmd-viewer-stage path[marker-end]')?.getAttribute('marker-end'),
       `url(#${viewerMarker.id})`,
     );
+    assert.match(viewerSvg?.querySelector('style')?.textContent || '', new RegExp(`#${viewerSvg.id} \\.node`));
+    assert.match(viewerSvg?.querySelector('style')?.textContent || '', new RegExp(`url\\(#${viewerMarker.id}\\)`));
+    assert.doesNotMatch(viewerSvg?.querySelector('style')?.textContent || '', /#diagram\b/);
     viewer.querySelector('[aria-label="放大"]')?.click();
     assert.notEqual(viewer.querySelector('[aria-label="恢复到 100%"]')?.textContent, '100%');
     const viewport = viewer.querySelector('.dsh-mmd-viewer-viewport');

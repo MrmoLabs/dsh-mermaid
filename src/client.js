@@ -223,6 +223,14 @@ function rewriteSvgIds(svg) {
       if (value !== attribute.value) element.setAttribute(attribute.name, value);
     }
   }
+
+  for (const style of svg.querySelectorAll('style')) {
+    let css = style.textContent || '';
+    for (const [original, replacement] of idMap) {
+      css = css.split(`#${original}`).join(`#${replacement}`);
+    }
+    style.textContent = css;
+  }
 }
 
 function fitViewer() {
