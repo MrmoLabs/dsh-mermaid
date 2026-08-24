@@ -4,7 +4,7 @@ import { Window } from 'happy-dom';
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-test('enhances, updates, switches, and disposes a Mermaid code block', async () => {
+test('handles the Mermaid card lifecycle, themes, and stale renders', async () => {
   const window = new Window({ url: 'http://localhost/' });
   const previousGlobals = new Map();
   const browserGlobals = {
@@ -29,12 +29,22 @@ test('enhances, updates, switches, and disposes a Mermaid code block', async () 
   try {
     const { apply, setMermaidRuntimeForTesting } = await import(`../src/client.js?dom-test=${Date.now()}`);
     const renderCalls = [];
+    const initializedThemes = [];
+    let releaseSlowRender;
     restoreMermaidRuntime = setMermaidRuntimeForTesting({
-      initialize() {},
+      initialize(options) {
+        initializedThemes.push(options.theme);
+      },
       async render(_id, source) {
         renderCalls.push(source);
         if (source.endsWith('-->')) throw new Error('synthetic Mermaid failure');
-        return { svg: `<svg data-source-length="${source.length}"></svg>` };
+        if (source.includes('SLOW')) {
+          return new Promise((resolve) => {
+            releaseSlowRender = () => resolve({ svg: '<svg data-render="slow"></svg>' });
+          });
+        }
+        const renderName = source.includes('FAST') ? 'fast' : 'normal';
+        return { svg: `<svg data-render="${renderName}" data-source-length="${source.length}"></svg>` };
       },
     });
     const ctx = {
@@ -73,6 +83,25 @@ test('enhances, updates, switches, and disposes a Mermaid code block', async () 
     await wait(700);
     assert.equal(card.querySelector('.dsh-mmd-code')?.textContent, 'flowchart LR\nA-->E');
     assert.deepEqual(renderCalls, ['flowchart LR\nA-->B', 'flowchart LR\nA-->E']);
+
+    document.body.setAttribute('data-ds-dark-theme', '');
+    await wait(700);
+    assert.deepEqual(renderCalls, [
+      'flowchart LR\nA-->B',
+      'flowchart LR\nA-->E',
+      'flowchart LR\nA-->E',
+    ]);
+    assert.equal(initializedThemes.at(-1), 'dark');
+
+    code.textContent = 'flowchart LR\nSLOW-->Z';
+    await wait(600);
+    assert.equal(typeof releaseSlowRender, 'function');
+    code.textContent = 'flowchart LR\nFAST-->Z';
+    await wait(600);
+    assert.equal(card.querySelector('.dsh-mmd-pane svg')?.getAttribute('data-render'), 'fast');
+    releaseSlowRender();
+    await wait(50);
+    assert.equal(card.querySelector('.dsh-mmd-pane svg')?.getAttribute('data-render'), 'fast');
 
     const invalidPre = document.createElement('pre');
     const invalidCode = document.createElement('code');
