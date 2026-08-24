@@ -217,6 +217,27 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.match(oversizedCard?.querySelector('.dsh-mmd-error')?.textContent || '', /2000 行/);
     assert.equal(renderCalls.length, renderCountBeforeOversized);
 
+    const streamingPre = document.createElement('pre');
+    const streamingCode = document.createElement('code');
+    streamingCode.className = 'language-mermaid';
+    streamingPre.appendChild(streamingCode);
+    document.body.appendChild(streamingPre);
+    await wait(400);
+    assert.notEqual(streamingPre.previousElementSibling?.className, 'dsh-mmd');
+    streamingCode.textContent = 'flowchart LR\nSTREAM-->DONE';
+    await wait(1_100);
+
+    const streamingCard = streamingPre.previousElementSibling;
+    assert.equal(streamingCard?.className, 'dsh-mmd');
+    assert.equal(streamingCard?.dataset.state, 'ok');
+
+    streamingCard.remove();
+    await wait(1_100);
+    const replacementCard = streamingPre.previousElementSibling;
+    assert.equal(replacementCard?.className, 'dsh-mmd');
+    assert.notEqual(replacementCard, streamingCard);
+    assert.equal(replacementCard?.dataset.state, 'ok');
+
     dispose?.();
     assert.equal(document.querySelector('.dsh-mmd'), null);
     assert.equal(document.querySelector('.dsh-mmd-viewer'), null);

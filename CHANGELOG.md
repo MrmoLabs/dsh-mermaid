@@ -14,6 +14,7 @@ All notable changes to this project are documented in this file.
 - Preserve Mermaid styling after SVG ID isolation by rewriting ID references inside embedded stylesheets.
 - Keep the diagram point under the mouse stationary while zooming with the wheel.
 - Document the last verified DSH and Node.js versions.
+- Discover Mermaid blocks that begin empty during streaming and recover if the host removes an injected card while retaining its code block.
 - Add DOM integration coverage for fullscreen controls, SVG export, and cleanup.
 
 ## [0.2.0] - 2026-08-24

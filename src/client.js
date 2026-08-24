@@ -453,7 +453,10 @@ function createEntry(code) {
   entry.stableTimer = setTimeout(() => {
     entry.stableTimer = null;
     const pre = code.closest('pre');
-    if (!code.isConnected || !pre?.parentNode) return;
+    if (!code.isConnected || !pre?.parentNode) {
+      entries.delete(code);
+      return;
+    }
     pre.parentNode.insertBefore(wrapper, pre);
     wrapper._dshCode = code;
     wrappers.add(wrapper);
@@ -569,6 +572,7 @@ function disposeEntry(entry) {
   if (viewer?.entry === entry) closeViewer();
   entry.wrapper.remove();
   wrappers.delete(entry.wrapper);
+  entries.delete(entry.code);
 }
 
 function collectGarbage() {
@@ -576,7 +580,10 @@ function collectGarbage() {
     const code = wrapper._dshCode;
     if (!wrapper.isConnected || !code?.isConnected) {
       const entry = code ? entries.get(code) : null;
-      if (entry) disposeEntry(entry);
+      if (entry) {
+        disposeEntry(entry);
+        if (code.isConnected) maybeEnhance(code);
+      }
       else wrappers.delete(wrapper);
     }
   }
@@ -599,6 +606,7 @@ function handleMutations(mutations) {
     const hostCode = target?.matches?.('code') ? target : target?.closest?.('code');
     const entry = hostCode ? entries.get(hostCode) : null;
     if (entry) entriesToRender.add(entry);
+    else if (hostCode) codesToEnhance.add(hostCode);
   }
 
   codesToEnhance.forEach(maybeEnhance);
