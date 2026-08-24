@@ -17,6 +17,8 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     CSSStyleSheet: window.CSSStyleSheet,
     MutationObserver: window.MutationObserver,
     navigator: window.navigator,
+    Blob: window.Blob,
+    URL: window.URL,
   };
 
   for (const [name, value] of Object.entries(browserGlobals)) {
@@ -27,6 +29,17 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
   let dispose;
   let restoreMermaidRuntime;
   try {
+    const objectUrls = [];
+    const revokedUrls = [];
+    let downloadedName = '';
+    window.URL.createObjectURL = (blob) => {
+      objectUrls.push(blob);
+      return `blob:test-${objectUrls.length}`;
+    };
+    window.URL.revokeObjectURL = (url) => revokedUrls.push(url);
+    window.HTMLAnchorElement.prototype.click = function click() {
+      downloadedName = this.download;
+    };
     const { apply, setMermaidRuntimeForTesting } = await import(`../src/client.js?dom-test=${Date.now()}`);
     const renderCalls = [];
     const initializedThemes = [];
@@ -72,6 +85,28 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.deepEqual(renderCalls, ['flowchart LR\nA-->B']);
 
     const buttons = card.querySelectorAll('.dsh-mmd-btn');
+    buttons[2].click();
+    const viewer = document.querySelector('.dsh-mmd-viewer');
+    assert.ok(viewer);
+    assert.equal(viewer.hidden, false);
+    assert.equal(document.body.style.overflow, 'hidden');
+    assert.equal(window.getComputedStyle(viewer).backgroundColor, '#fff');
+    assert.equal(viewer.querySelectorAll('.dsh-mmd-viewer-stage svg').length, 1);
+    viewer.querySelector('[aria-label="放大"]')?.click();
+    assert.notEqual(viewer.querySelector('[aria-label="恢复到 100%"]')?.textContent, '100%');
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
+    assert.equal(viewer.hidden, true);
+    assert.equal(document.body.style.overflow, '');
+
+    buttons[3].click();
+    assert.equal(card.querySelector('.dsh-mmd-menu')?.hidden, false);
+    card.querySelector('.dsh-mmd-menu-item')?.click();
+    assert.equal(downloadedName, 'mermaid-flowchart.svg');
+    assert.equal(objectUrls.length, 1);
+    assert.equal(objectUrls[0].type, 'image/svg+xml;charset=utf-8');
+    await wait(10);
+    assert.deepEqual(revokedUrls, ['blob:test-1']);
+
     buttons[1].click();
     assert.equal(card.dataset.view, 'code');
     assert.equal(buttons[1].getAttribute('aria-pressed'), 'true');
@@ -86,6 +121,7 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
 
     document.body.setAttribute('data-ds-dark-theme', '');
     await wait(700);
+    assert.equal(window.getComputedStyle(viewer).backgroundColor, '#121212');
     assert.deepEqual(renderCalls, [
       'flowchart LR\nA-->B',
       'flowchart LR\nA-->E',
@@ -120,6 +156,7 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
 
     dispose?.();
     assert.equal(document.querySelector('.dsh-mmd'), null);
+    assert.equal(document.querySelector('.dsh-mmd-viewer'), null);
     assert.equal(document.getElementById('dsh-mermaid/css'), null);
   } finally {
     dispose?.();

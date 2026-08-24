@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.0] - 2026-08-24
+
+- Add a fullscreen Mermaid viewer with zoom, pan, 100% reset, and fit-to-window controls.
+- Use an opaque theme-aware viewer background so the underlying conversation never shows through.
+- Add SVG export from each successfully rendered diagram card.
+- Close the viewer with Escape, restore page scrolling, and keep an open viewer synchronized with rerenders.
+- Add DOM integration coverage for fullscreen controls, SVG export, and cleanup.
+
 ## [0.2.0] - 2026-08-24
 
 - Reduce the DSH startup bundle from about 3.45 MB to 8.7 KB by loading the bundled Mermaid runtime on demand.
@@ -39,6 +47,7 @@ All notable changes to this project are documented in this file.
 - Render Mermaid fenced code blocks as SVG diagrams in DSH Web.
 - Add diagram/source switching, dark-theme rerendering, streaming support, strict Mermaid security, and npm/GitHub installers.
 
+[0.3.0]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.1.1...v0.1.2

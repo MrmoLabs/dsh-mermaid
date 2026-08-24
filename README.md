@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md) | English
 
-Render Mermaid fenced code blocks in DeepSeek Harness Web as SVG diagrams with a **Diagram / Code** toggle. The plugin supports streaming responses, dark mode, and automatic fallback to source code when rendering fails.
+Render Mermaid fenced code blocks in DeepSeek Harness Web as SVG diagrams with a **Diagram / Code** toggle. The plugin supports streaming responses, dark mode, fullscreen viewing, zoom and pan, SVG export, and automatic fallback to source code when rendering fails.
 
 [![npm version](https://img.shields.io/npm/v/dsh-mermaid.svg)](https://www.npmjs.com/package/dsh-mermaid)
 
@@ -13,6 +13,8 @@ Render Mermaid fenced code blocks in DeepSeek Harness Web as SVG diagrams with a
 - Bundles the exact Mermaid `11.17.0` release and requires no runtime CDN
 - Loads the bundled Mermaid runtime from DSH only after the first Mermaid block is detected
 - Uses Mermaid's `securityLevel: strict`
+- Opens rendered diagrams in a fullscreen viewer with zoom, pan, reset, and fit-to-window controls
+- Exports the rendered diagram as a standalone SVG file from the card's **More** menu
 - Enhances only `<pre><code>` blocks and ignores inline code
 - Prevents stale asynchronous renders from overwriting newer streaming content
 

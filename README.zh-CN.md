@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.md)
 
-在 DeepSeek Harness Web 会话中把 Mermaid 围栏代码块渲染为 SVG 图形，并提供**图形 / 代码**双向切换。插件支持流式输出、深色主题，并在渲染失败时自动回退到源代码。
+在 DeepSeek Harness Web 会话中把 Mermaid 围栏代码块渲染为 SVG 图形，并提供**图形 / 代码**双向切换。插件支持流式输出、深色主题、全屏查看、缩放与拖拽、SVG 导出，并在渲染失败时自动回退到源代码。
 
 [![npm version](https://img.shields.io/npm/v/dsh-mermaid.svg)](https://www.npmjs.com/package/dsh-mermaid)
 
@@ -13,6 +13,8 @@
 - 固定并打包 Mermaid `11.17.0`，运行时不依赖 CDN
 - 仅在首次检测到 Mermaid 代码块后，才从 DSH 同源加载已打包的 Mermaid 运行时
 - 使用 Mermaid `securityLevel: strict`
+- 支持全屏查看，并提供缩放、拖拽、恢复 100% 和适应窗口操作
+- 可通过卡片的**更多**菜单把已渲染图形导出为独立 SVG 文件
 - 只增强 `<pre><code>` 代码块，不处理行内代码
 - 防止旧的异步渲染结果覆盖较新的流式内容
 
