@@ -199,20 +199,26 @@ function collectGarbage() {
 }
 
 function handleMutations(mutations) {
+  const codesToEnhance = new Set();
+  const entriesToRender = new Set();
+
   for (const mutation of mutations) {
     if (mutation.type === 'childList') {
       for (const node of mutation.addedNodes) {
         if (node.nodeType !== Node.ELEMENT_NODE) continue;
-        if (node.matches?.('code')) maybeEnhance(node);
-        node.querySelectorAll?.('code').forEach(maybeEnhance);
+        if (node.matches?.('code')) codesToEnhance.add(node);
+        node.querySelectorAll?.('code').forEach((code) => codesToEnhance.add(code));
       }
     }
 
     const target = mutation.type === 'characterData' ? mutation.target.parentElement : mutation.target;
     const hostCode = target?.matches?.('code') ? target : target?.closest?.('code');
     const entry = hostCode ? entries.get(hostCode) : null;
-    if (entry) scheduleRender(entry);
+    if (entry) entriesToRender.add(entry);
   }
+
+  codesToEnhance.forEach(maybeEnhance);
+  entriesToRender.forEach(scheduleRender);
   collectGarbage();
 }
 
