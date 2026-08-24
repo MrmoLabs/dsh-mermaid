@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.2] - 2026-08-24
+
+- Keep the source-code view inside the Mermaid card instead of revealing the detached DSH code block.
+- Remove the empty diagram-body frame when switching to source code.
+- Preserve rendering errors alongside the in-card source view.
+- Fail the build if the generated browser bundle does not register the quoted `dsh-mermaid` ModuleLoader ID.
+
 ## [0.1.1] - 2026-08-23
 
 - Move Mermaid from runtime dependencies to development dependencies because it is already bundled into the client artifact.
@@ -18,5 +25,6 @@ All notable changes to this project are documented in this file.
 - Render Mermaid fenced code blocks as SVG diagrams in DSH Web.
 - Add diagram/source switching, dark-theme rerendering, streaming support, strict Mermaid security, and npm/GitHub installers.
 
+[0.1.2]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/MrmoLabs/dsh-mermaid/releases/tag/v0.1.0

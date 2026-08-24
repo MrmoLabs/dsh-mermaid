@@ -18,9 +18,14 @@ const CSS = `
 .dsh-mmd-pane svg{max-width:100%;height:auto;display:block;margin:0 auto}
 .dsh-mmd-pane[data-state='loading'],.dsh-mmd-pane[data-state='error']{font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-tertiary,#888);padding:12px 4px;white-space:pre-wrap}
 .dsh-mmd-pane[data-state='error']{color:var(--dsw-alias-state-error-primary,#d33)}
+.dsh-mmd-code{display:none;margin:0;padding:12px 14px;overflow-x:auto;font:var(--dsl-code-block-content-font,var(--dsw-font-markdown-code-block,13px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace));color:var(--dsw-alias-label-primary,#e6e6e6);white-space:pre;tab-size:4}
+.dsh-mmd-error{display:none;font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-state-error-primary,#d33);padding:8px 14px 0;white-space:pre-wrap}
+.dsh-mmd[data-view='code'] .dsh-mmd-body{padding:0}
 .dsh-mmd[data-view='code'] .dsh-mmd-pane{display:none}
-.dsh-mmd[data-view='code'] + pre{display:block}
-.dsh-mmd[data-view='diagram'] + pre{display:none}
+.dsh-mmd[data-view='code'] .dsh-mmd-code{display:block}
+.dsh-mmd[data-view='code'][data-state='error'] .dsh-mmd-error{display:block}
+/* 原始代码块始终隐藏：代码视图由卡片内部的 .dsh-mmd-code 呈现 */
+.dsh-mmd + pre{display:none}
 @media (prefers-reduced-motion:reduce){.dsh-mmd *{animation:none!important;transition:none!important}}
 `;
 
@@ -95,13 +100,18 @@ function createEntry(code) {
   pane.className = 'dsh-mmd-pane';
   pane.dataset.state = 'loading';
   pane.textContent = '渲染中…';
+  const codePane = document.createElement('pre');
+  codePane.className = 'dsh-mmd-code';
+  codePane.textContent = code.textContent || '';
+  const errorEl = document.createElement('div');
+  errorEl.className = 'dsh-mmd-error';
 
-  body.appendChild(pane);
+  body.append(pane, codePane, errorEl);
   bar.append(badge, label, btnDiagram, btnCode);
   wrapper.append(bar, body);
 
   const entry = {
-    code, wrapper, pane, badge, btnDiagram, btnCode,
+    code, wrapper, pane, codePane, errorEl, badge, btnDiagram, btnCode,
     lastRendered: '', stableTimer: null, renderTimer: null, renderGeneration: 0,
   };
   entries.set(code, entry);
@@ -127,6 +137,8 @@ async function renderDiagram(entry) {
 
   const generation = ++entry.renderGeneration;
   entry.badge.textContent = diagramType(source) || 'mermaid';
+  entry.codePane.textContent = entry.code.textContent || '';
+  entry.wrapper.dataset.state = 'rendering';
   entry.pane.dataset.state = 'loading';
   entry.pane.textContent = '渲染中…';
 
@@ -140,11 +152,15 @@ async function renderDiagram(entry) {
     const svgElement = entry.pane.querySelector('svg');
     if (svgElement && bindFunctions) bindFunctions(svgElement);
     entry.lastRendered = source;
+    entry.wrapper.dataset.state = 'ok';
     entry.pane.dataset.state = 'ok';
   } catch (error) {
     if (generation !== entry.renderGeneration || !entry.wrapper.isConnected) return;
+    const message = `diagram 渲染失败: ${error?.message || String(error)}`;
+    entry.wrapper.dataset.state = 'error';
     entry.pane.dataset.state = 'error';
-    entry.pane.textContent = `diagram 渲染失败: ${error?.message || String(error)}`;
+    entry.pane.textContent = message;
+    entry.errorEl.textContent = message;
     setView(entry, 'code');
   }
 }

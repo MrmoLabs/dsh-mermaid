@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, readFile } from 'node:fs/promises';
 
 await mkdir('lib', { recursive: true });
 
@@ -19,5 +19,10 @@ await build({
     js: 'return module.exports;}});',
   },
 });
+
+const clientBundle = await readFile('lib/client.js', 'utf8');
+if (!clientBundle.startsWith('window.__ModuleLoader__.load({id:"dsh-mermaid",')) {
+  throw new Error('The client bundle does not register the dsh-mermaid ModuleLoader ID.');
+}
 
 await copyFile('src/index.js', 'lib/index.js');
