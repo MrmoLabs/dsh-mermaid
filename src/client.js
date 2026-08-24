@@ -1,9 +1,12 @@
-import mermaid from 'mermaid';
 import { diagramType, hasMermaidLanguage, isMermaidSource } from './detection.js';
 
 const TAG_ID = 'dsh-mermaid/css';
 const STABLE_MS = 300;
 const RENDER_DEBOUNCE_MS = 500;
+const RUNTIME_REVISION = typeof __DSH_MERMAID_RUNTIME_REV__ === 'undefined'
+  ? 'development'
+  : __DSH_MERMAID_RUNTIME_REV__;
+const RUNTIME_URL = `/dsh-mermaid/mermaid-runtime.js?rev=${RUNTIME_REVISION}`;
 
 const CSS = `
 .dsh-mmd{margin:8px 0 10px;border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.25));border-radius:10px;background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.06));overflow:hidden}
@@ -31,24 +34,44 @@ const CSS = `
 
 let uid = 0;
 let styleTag = null;
-let mermaidRuntime = mermaid;
+let mermaidRuntime = null;
+let runtimePromise = null;
 const entries = new WeakMap();
 const wrappers = new Set();
 
 function setMermaidRuntimeForTesting(runtime) {
   const previous = mermaidRuntime;
+  const previousPromise = runtimePromise;
   mermaidRuntime = runtime;
+  runtimePromise = Promise.resolve(runtime);
   return () => {
     mermaidRuntime = previous;
+    runtimePromise = previousPromise;
   };
+}
+
+function loadMermaidRuntime() {
+  if (mermaidRuntime) return Promise.resolve(mermaidRuntime);
+  if (!runtimePromise) {
+    runtimePromise = import(RUNTIME_URL)
+      .then((module) => {
+        mermaidRuntime = module.default;
+        return mermaidRuntime;
+      })
+      .catch((error) => {
+        runtimePromise = null;
+        throw error;
+      });
+  }
+  return runtimePromise;
 }
 
 function isDark() {
   return document.body?.hasAttribute('data-ds-dark-theme') ?? false;
 }
 
-function initializeMermaid() {
-  mermaidRuntime.initialize({
+function initializeMermaid(runtime) {
+  runtime.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
     theme: isDark() ? 'dark' : 'default',
@@ -152,9 +175,12 @@ async function renderDiagram(entry) {
   entry.pane.textContent = '渲染中…';
 
   try {
-    initializeMermaid();
+    const runtime = await loadMermaidRuntime();
+    if (generation !== entry.renderGeneration || !entry.wrapper.isConnected) return;
+    if ((entry.code.textContent || '').trim() !== source) return;
+    initializeMermaid(runtime);
     const id = `dsh-mmd-${++uid}`;
-    const { svg, bindFunctions } = await mermaidRuntime.render(id, source);
+    const { svg, bindFunctions } = await runtime.render(id, source);
     if (generation !== entry.renderGeneration || !entry.wrapper.isConnected) return;
     if ((entry.code.textContent || '').trim() !== source) return;
     entry.pane.innerHTML = svg;

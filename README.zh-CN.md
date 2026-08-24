@@ -11,6 +11,7 @@
 - 支持 `mermaid`、`mermaidjs` 和 `mmd` 围栏代码块
 - 兼容 DSH/Shiki plain fallback，此时代码元素可能没有 language class
 - 固定并打包 Mermaid `11.17.0`，运行时不依赖 CDN
+- 仅在首次检测到 Mermaid 代码块后，才从 DSH 同源加载已打包的 Mermaid 运行时
 - 使用 Mermaid `securityLevel: strict`
 - 只增强 `<pre><code>` 代码块，不处理行内代码
 - 防止旧的异步渲染结果覆盖较新的流式内容
@@ -79,7 +80,7 @@ npm.cmd run build
 dsh plugin --profile web add -w .
 ```
 
-构建产物位于 `lib/`，并由 DSH 客户端模块加载器注册为 `dsh-mermaid`。DSH 会以当前插件项目为基准解析相对安装路径。
+构建产物位于 `lib/`。轻量的 `client.js` 启动器由 DSH 客户端模块加载器注册为 `dsh-mermaid`，打包后的 Mermaid 运行时则通过插件的同源宿主路由按需加载。DSH 会以当前插件项目为基准解析相对安装路径。
 
 本地开发时，也可以手动把构建后的包复制到：
 

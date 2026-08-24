@@ -11,6 +11,7 @@ Render Mermaid fenced code blocks in DeepSeek Harness Web as SVG diagrams with a
 - Supports `mermaid`, `mermaidjs`, and `mmd` fenced code blocks
 - Works with the DSH/Shiki plain fallback, where code elements may not have a language class
 - Bundles the exact Mermaid `11.17.0` release and requires no runtime CDN
+- Loads the bundled Mermaid runtime from DSH only after the first Mermaid block is detected
 - Uses Mermaid's `securityLevel: strict`
 - Enhances only `<pre><code>` blocks and ignores inline code
 - Prevents stale asynchronous renders from overwriting newer streaming content
@@ -79,7 +80,7 @@ npm.cmd run build
 dsh plugin --profile web add -w .
 ```
 
-Build output is written to `lib/` and registered with the DSH client module loader as `dsh-mermaid`. DSH resolves the relative installation path against the current plugin checkout.
+Build output is written to `lib/`. The lightweight `client.js` bootstrap is registered with the DSH client module loader as `dsh-mermaid`, while the bundled Mermaid runtime is served from the plugin's same-origin host route and loaded on demand. DSH resolves the relative installation path against the current plugin checkout.
 
 For manual local development, the built package can also be copied to:
 
