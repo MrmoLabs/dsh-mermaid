@@ -12,11 +12,17 @@ Render Mermaid fenced code blocks in DeepSeek Harness Web as SVG diagrams with a
 - Works with the DSH/Shiki plain fallback, where code elements may not have a language class
 - Bundles the exact Mermaid `11.17.0` release and requires no runtime CDN
 - Loads the bundled Mermaid runtime from DSH only after the first Mermaid block is detected
+- Renders multiple diagrams through a serial queue and yields between renders to keep the page responsive
 - Uses Mermaid's `securityLevel: strict`
 - Opens rendered diagrams in a fullscreen viewer with zoom, pan, reset, and fit-to-window controls
 - Exports the rendered diagram as a standalone SVG file from the card's **More** menu
 - Enhances only `<pre><code>` blocks and ignores inline code
 - Prevents stale asynchronous renders from overwriting newer streaming content
+- Rejects individual diagrams over 50,000 characters or 2,000 lines before invoking Mermaid
+
+## Compatibility
+
+Last verified with `@deepseek-ai/dsh 0.1.0-rc.7` on 2026-08-24 using Node.js 22.23.2. DSH is currently a developer preview and may introduce compatibility-breaking changes; please open an issue if a newer DSH release changes its plugin loader or Markdown DOM.
 
 ## Install
 

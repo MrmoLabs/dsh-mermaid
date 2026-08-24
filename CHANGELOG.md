@@ -8,6 +8,11 @@ All notable changes to this project are documented in this file.
 - Use an opaque theme-aware viewer background so the underlying conversation never shows through.
 - Add SVG export from each successfully rendered diagram card.
 - Close the viewer with Escape, restore page scrolling, and keep an open viewer synchronized with rerenders.
+- Render diagrams through a deduplicated serial queue and yield between renders to avoid concurrent main-thread work.
+- Reject oversized diagrams before loading Mermaid, with 50,000-character and 2,000-line limits plus Mermaid edge protection.
+- Rewrite IDs and internal references in fullscreen SVG clones to avoid collisions with the in-card diagram.
+- Keep the diagram point under the mouse stationary while zooming with the wheel.
+- Document the last verified DSH and Node.js versions.
 - Add DOM integration coverage for fullscreen controls, SVG export, and cleanup.
 
 ## [0.2.0] - 2026-08-24

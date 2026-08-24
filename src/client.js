@@ -3,6 +3,8 @@ import { diagramType, hasMermaidLanguage, isMermaidSource } from './detection.js
 const TAG_ID = 'dsh-mermaid/css';
 const STABLE_MS = 300;
 const RENDER_DEBOUNCE_MS = 500;
+const MAX_SOURCE_CHARS = 50_000;
+const MAX_SOURCE_LINES = 2_000;
 const RUNTIME_REVISION = typeof __DSH_MERMAID_RUNTIME_REV__ === 'undefined'
   ? 'development'
   : __DSH_MERMAID_RUNTIME_REV__;
@@ -52,8 +54,11 @@ let styleTag = null;
 let mermaidRuntime = null;
 let runtimePromise = null;
 let viewer = null;
+let viewerCloneUid = 0;
+let renderQueueActive = false;
 const entries = new WeakMap();
 const wrappers = new Set();
+const renderQueue = [];
 
 function setMermaidRuntimeForTesting(runtime) {
   const previous = mermaidRuntime;
@@ -91,6 +96,8 @@ function initializeMermaid(runtime) {
     startOnLoad: false,
     securityLevel: 'strict',
     theme: isDark() ? 'dark' : 'default',
+    maxTextSize: MAX_SOURCE_CHARS,
+    maxEdges: 2_000,
   });
 }
 
@@ -173,10 +180,49 @@ function updateViewerTransform() {
   viewer.zoomLabel.textContent = `${Math.round(viewer.scale * 100)}%`;
 }
 
-function setViewerScale(scale) {
+function setViewerScale(scale, anchor) {
   if (!viewer) return;
-  viewer.scale = Math.min(5, Math.max(0.1, scale));
+  const previousScale = viewer.scale;
+  const nextScale = Math.min(5, Math.max(0.1, scale));
+  if (anchor && previousScale > 0 && nextScale !== previousScale) {
+    const ratio = nextScale / previousScale;
+    viewer.panX = anchor.x - ((anchor.x - viewer.panX) * ratio);
+    viewer.panY = anchor.y - ((anchor.y - viewer.panY) * ratio);
+  }
+  viewer.scale = nextScale;
   updateViewerTransform();
+}
+
+function rewriteSvgIds(svg) {
+  const elements = [svg, ...svg.querySelectorAll('*')];
+  const idMap = new Map();
+  const prefix = `dsh-mmd-view-${++viewerCloneUid}-`;
+
+  for (const element of elements) {
+    if (!element.id) continue;
+    const replacement = `${prefix}${idMap.size + 1}`;
+    idMap.set(element.id, replacement);
+    element.id = replacement;
+  }
+
+  if (!idMap.size) return;
+  for (const element of elements) {
+    for (const attribute of [...element.attributes]) {
+      if (attribute.name === 'id') continue;
+      let value = attribute.value.replace(
+        /url\(\s*(['"]?)#([^)'"\s]+)\1\s*\)/g,
+        (match, quote, id) => idMap.has(id) ? `url(${quote}#${idMap.get(id)}${quote})` : match,
+      );
+      if ((attribute.name === 'href' || attribute.name === 'xlink:href') && value.startsWith('#')) {
+        const replacement = idMap.get(value.slice(1));
+        if (replacement) value = `#${replacement}`;
+      }
+      if (attribute.name === 'aria-labelledby' || attribute.name === 'aria-describedby') {
+        value = value.split(/\s+/).map((id) => idMap.get(id) || id).join(' ');
+      }
+      if (value !== attribute.value) element.setAttribute(attribute.name, value);
+    }
+  }
 }
 
 function fitViewer() {
@@ -197,6 +243,7 @@ function updateViewerSvg(entry, shouldFit) {
   const sourceSvg = entry.pane.querySelector('svg');
   if (!sourceSvg) return;
   const clone = sourceSvg.cloneNode(true);
+  rewriteSvgIds(clone);
   const dimensions = svgDimensions(clone);
   clone.setAttribute('width', String(dimensions.width));
   clone.setAttribute('height', String(dimensions.height));
@@ -264,7 +311,12 @@ function createViewer() {
   close.addEventListener('click', closeViewer);
   viewport.addEventListener('wheel', (event) => {
     event.preventDefault();
-    setViewerScale(viewer.scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12));
+    const bounds = viewport.getBoundingClientRect();
+    const anchor = {
+      x: event.clientX - bounds.left - (bounds.width / 2),
+      y: event.clientY - bounds.top - (bounds.height / 2),
+    };
+    setViewerScale(viewer.scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12), anchor);
   }, { passive: false });
   viewport.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;
@@ -413,6 +465,25 @@ async function renderDiagram(entry) {
   entry.pane.dataset.state = 'loading';
   entry.pane.textContent = '渲染中…';
 
+  let limitDetail = '';
+  if (source.length > MAX_SOURCE_CHARS) {
+    limitDetail = `源码长度 ${source.length} 字符，限制为 ${MAX_SOURCE_CHARS} 字符`;
+  } else {
+    const lineCount = source.split('\n', MAX_SOURCE_LINES + 1).length;
+    if (lineCount > MAX_SOURCE_LINES) {
+      limitDetail = `源码共 ${lineCount} 行，限制为 ${MAX_SOURCE_LINES} 行`;
+    }
+  }
+  if (limitDetail) {
+    const message = `diagram 未渲染: ${limitDetail}`;
+    entry.wrapper.dataset.state = 'error';
+    entry.pane.dataset.state = 'error';
+    entry.pane.textContent = message;
+    entry.errorEl.textContent = message;
+    setView(entry, 'code');
+    return;
+  }
+
   try {
     const runtime = await loadMermaidRuntime();
     if (generation !== entry.renderGeneration || !entry.wrapper.isConnected) return;
@@ -444,8 +515,37 @@ function scheduleRender(entry) {
   if (entry.renderTimer) clearTimeout(entry.renderTimer);
   entry.renderTimer = setTimeout(() => {
     entry.renderTimer = null;
-    void renderDiagram(entry);
+    enqueueRender(entry);
   }, RENDER_DEBOUNCE_MS);
+}
+
+function yieldToBrowser() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function enqueueRender(entry) {
+  if (entry.renderQueued) return;
+  entry.renderQueued = true;
+  renderQueue.push(entry);
+  void drainRenderQueue();
+}
+
+async function drainRenderQueue() {
+  if (renderQueueActive) return;
+  renderQueueActive = true;
+  try {
+    while (renderQueue.length) {
+      const entry = renderQueue.shift();
+      entry.renderQueued = false;
+      if (entry.wrapper.isConnected && entry.code.isConnected) {
+        await renderDiagram(entry);
+        await yieldToBrowser();
+      }
+    }
+  } finally {
+    renderQueueActive = false;
+    if (renderQueue.length) void drainRenderQueue();
+  }
 }
 
 function maybeEnhance(code) {

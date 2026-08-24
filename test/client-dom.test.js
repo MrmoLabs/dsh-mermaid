@@ -43,21 +43,33 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     const { apply, setMermaidRuntimeForTesting } = await import(`../src/client.js?dom-test=${Date.now()}`);
     const renderCalls = [];
     const initializedThemes = [];
+    const initializedOptions = [];
     let releaseSlowRender;
+    let activeRenders = 0;
+    let maxActiveRenders = 0;
     restoreMermaidRuntime = setMermaidRuntimeForTesting({
       initialize(options) {
         initializedThemes.push(options.theme);
+        initializedOptions.push(options);
       },
       async render(_id, source) {
         renderCalls.push(source);
-        if (source.endsWith('-->')) throw new Error('synthetic Mermaid failure');
-        if (source.includes('SLOW')) {
-          return new Promise((resolve) => {
-            releaseSlowRender = () => resolve({ svg: '<svg data-render="slow"></svg>' });
-          });
+        activeRenders += 1;
+        maxActiveRenders = Math.max(maxActiveRenders, activeRenders);
+        try {
+          if (source.endsWith('-->')) throw new Error('synthetic Mermaid failure');
+          if (source.includes('SLOW')) {
+            return await new Promise((resolve) => {
+              releaseSlowRender = () => resolve({ svg: '<svg data-render="slow"></svg>' });
+            });
+          }
+          const renderName = source.includes('FAST') ? 'fast' : 'normal';
+          return {
+            svg: `<svg data-render="${renderName}" data-source-length="${source.length}"><defs><marker id="arrow"><path></path></marker></defs><path marker-end="url(#arrow)"></path></svg>`,
+          };
+        } finally {
+          activeRenders -= 1;
         }
-        const renderName = source.includes('FAST') ? 'fast' : 'normal';
-        return { svg: `<svg data-render="${renderName}" data-source-length="${source.length}"></svg>` };
       },
     });
     const ctx = {
@@ -92,7 +104,29 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.equal(document.body.style.overflow, 'hidden');
     assert.equal(window.getComputedStyle(viewer).backgroundColor, '#fff');
     assert.equal(viewer.querySelectorAll('.dsh-mmd-viewer-stage svg').length, 1);
+    const originalMarkerId = card.querySelector('.dsh-mmd-pane marker')?.id;
+    const viewerMarker = viewer.querySelector('.dsh-mmd-viewer-stage marker');
+    assert.ok(originalMarkerId);
+    assert.ok(viewerMarker?.id);
+    assert.notEqual(viewerMarker.id, originalMarkerId);
+    assert.equal(
+      viewer.querySelector('.dsh-mmd-viewer-stage path[marker-end]')?.getAttribute('marker-end'),
+      `url(#${viewerMarker.id})`,
+    );
     viewer.querySelector('[aria-label="放大"]')?.click();
+    assert.notEqual(viewer.querySelector('[aria-label="恢复到 100%"]')?.textContent, '100%');
+    const viewport = viewer.querySelector('.dsh-mmd-viewer-viewport');
+    viewport.getBoundingClientRect = () => ({
+      left: 0, top: 0, width: 1_000, height: 800, right: 1_000, bottom: 800, x: 0, y: 0,
+      toJSON() { return this; },
+    });
+    const transformBeforeCursorZoom = viewer.querySelector('.dsh-mmd-viewer-stage')?.style.transform;
+    viewport.dispatchEvent(new window.WheelEvent('wheel', {
+      deltaY: -100, clientX: 800, clientY: 400, bubbles: true, cancelable: true,
+    }));
+    const transformAfterCursorZoom = viewer.querySelector('.dsh-mmd-viewer-stage')?.style.transform || '';
+    assert.notEqual(transformAfterCursorZoom, transformBeforeCursorZoom);
+    assert.doesNotMatch(transformAfterCursorZoom, /translate\(0px,0px\)/);
     assert.notEqual(viewer.querySelector('[aria-label="恢复到 100%"]')?.textContent, '100%');
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
     assert.equal(viewer.hidden, true);
@@ -128,16 +162,19 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
       'flowchart LR\nA-->E',
     ]);
     assert.equal(initializedThemes.at(-1), 'dark');
+    assert.equal(initializedOptions.at(-1).maxTextSize, 50_000);
+    assert.equal(initializedOptions.at(-1).maxEdges, 2_000);
 
     code.textContent = 'flowchart LR\nSLOW-->Z';
     await wait(600);
     assert.equal(typeof releaseSlowRender, 'function');
     code.textContent = 'flowchart LR\nFAST-->Z';
     await wait(600);
-    assert.equal(card.querySelector('.dsh-mmd-pane svg')?.getAttribute('data-render'), 'fast');
+    assert.equal(renderCalls.includes('flowchart LR\nFAST-->Z'), false);
     releaseSlowRender();
-    await wait(50);
+    await wait(100);
     assert.equal(card.querySelector('.dsh-mmd-pane svg')?.getAttribute('data-render'), 'fast');
+    assert.equal(maxActiveRenders, 1);
 
     const invalidPre = document.createElement('pre');
     const invalidCode = document.createElement('code');
@@ -153,6 +190,22 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.equal(invalidCard?.dataset.view, 'code');
     assert.match(invalidCard?.querySelector('.dsh-mmd-error')?.textContent || '', /渲染失败/);
     assert.equal(invalidCard?.querySelector('.dsh-mmd-code')?.textContent, 'flowchart LR\nA-->');
+
+    const oversizedPre = document.createElement('pre');
+    const oversizedCode = document.createElement('code');
+    oversizedCode.className = 'language-mermaid';
+    oversizedCode.textContent = `flowchart LR\n${'A-->B\n'.repeat(2_001)}`;
+    oversizedPre.appendChild(oversizedCode);
+    document.body.appendChild(oversizedPre);
+    const renderCountBeforeOversized = renderCalls.length;
+    await wait(1_100);
+
+    const oversizedCard = oversizedPre.previousElementSibling;
+    assert.equal(oversizedCard?.className, 'dsh-mmd');
+    assert.equal(oversizedCard?.dataset.state, 'error');
+    assert.equal(oversizedCard?.dataset.view, 'code');
+    assert.match(oversizedCard?.querySelector('.dsh-mmd-error')?.textContent || '', /2000 行/);
+    assert.equal(renderCalls.length, renderCountBeforeOversized);
 
     dispose?.();
     assert.equal(document.querySelector('.dsh-mmd'), null);
