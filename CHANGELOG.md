@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.3] - 2026-08-24
+
+- Remove the redundant 1.5-second full-page code-block rescan.
+- Keep the initial scan and MutationObserver-based incremental discovery for newly streamed content.
+- Reduce continuous DOM-query overhead during long-running DSH Web sessions.
+
 ## [0.1.2] - 2026-08-24
 
 - Keep the source-code view inside the Mermaid card instead of revealing the detached DSH code block.
@@ -25,6 +31,7 @@ All notable changes to this project are documented in this file.
 - Render Mermaid fenced code blocks as SVG diagrams in DSH Web.
 - Add diagram/source switching, dark-theme rerendering, streaming support, strict Mermaid security, and npm/GitHub installers.
 
+[0.1.3]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/MrmoLabs/dsh-mermaid/releases/tag/v0.1.0

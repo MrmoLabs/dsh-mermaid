@@ -239,13 +239,8 @@ function apply(ctx) {
     themeObserver.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] });
 
     document.querySelectorAll('pre code').forEach(maybeEnhance);
-    const rescanTimer = setInterval(() => {
-      document.querySelectorAll('pre code').forEach(maybeEnhance);
-      collectGarbage();
-    }, 1500);
 
     return () => {
-      clearInterval(rescanTimer);
       observer.disconnect();
       themeObserver.disconnect();
       for (const wrapper of [...wrappers]) {
