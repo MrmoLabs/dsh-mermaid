@@ -172,6 +172,7 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
       'flowchart LR\nA-->E',
     ]);
     assert.equal(initializedThemes.at(-1), 'dark');
+    assert.equal(initializedOptions.at(-1).suppressErrorRendering, true);
     assert.equal(initializedOptions.at(-1).maxTextSize, 50_000);
     assert.equal(initializedOptions.at(-1).maxEdges, 2_000);
 

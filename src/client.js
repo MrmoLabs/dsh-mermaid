@@ -95,6 +95,7 @@ function initializeMermaid(runtime) {
   runtime.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
+    suppressErrorRendering: true,
     theme: isDark() ? 'dark' : 'default',
     maxTextSize: MAX_SOURCE_CHARS,
     maxEdges: 2_000,

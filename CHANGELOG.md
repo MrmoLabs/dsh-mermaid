@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+- Prevent Mermaid parse failures from leaving temporary built-in error SVG elements in the document while preserving the existing source-code fallback.
+
 ## [0.3.0] - 2026-08-24
 
 - Add a fullscreen Mermaid viewer with zoom, pan, 100% reset, and fit-to-window controls.
