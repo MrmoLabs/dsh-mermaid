@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [0.3.1] - 2026-09-04
 
 - Prevent Mermaid parse failures from leaving temporary built-in error SVG elements in the document while preserving the existing source-code fallback.
 
