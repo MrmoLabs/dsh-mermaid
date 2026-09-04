@@ -1,0 +1,45 @@
+name: Publish to npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Git tag to publish
+        required: true
+        default: v0.3.1
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Verify release tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node -e "const expected = 'v' + require('./package.json').version; if (process.env.RELEASE_TAG !== expected) { throw new Error('Expected tag ' + expected + ', received ' + process.env.RELEASE_TAG); }"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run checks
+        run: npm run check
+
+      - name: Publish package
+        run: npm publish --access public
