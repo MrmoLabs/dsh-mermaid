@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md) | English
 
-Render Mermaid fenced code blocks in DeepSeek Harness Web as SVG diagrams with a **Diagram / Code** toggle. The plugin supports streaming responses, dark mode, fullscreen viewing, zoom and pan, SVG export, and automatic fallback to source code when rendering fails.
+Render Mermaid fenced code blocks in DeepSeek Harness Web as SVG diagrams with a **Code / Diagram** toggle. The plugin supports streaming responses, dark mode, fullscreen viewing, zoom and pan, SVG export, and automatic fallback to source code when rendering fails.
 
 [![npm version](https://img.shields.io/npm/v/dsh-mermaid.svg)](https://www.npmjs.com/package/dsh-mermaid)
 
@@ -19,6 +19,7 @@ Render Mermaid fenced code blocks in DeepSeek Harness Web as SVG diagrams with a
 - Keeps keyboard focus inside the fullscreen viewer, isolates background content, and returns focus to the triggering control when closed
 - Announces render and download status to assistive technologies and gives generated SVG diagrams accessible names
 - Exports the rendered diagram as a standalone SVG file directly from the card
+- Keeps fullscreen and SVG download actions available in both views and holds the toolbar in place while switching
 - Localizes plugin-owned interface and status text in Simplified Chinese or English by following the page and browser language
 - Enhances only `<pre><code>` blocks and ignores inline code
 - Prevents stale asynchronous renders from overwriting newer streaming content
@@ -26,7 +27,7 @@ Render Mermaid fenced code blocks in DeepSeek Harness Web as SVG diagrams with a
 
 ## Compatibility
 
-Last verified with `@deepseek-ai/dsh 0.1.0-rc.7` on 2026-08-24 using Node.js 22.23.2. DSH is currently a developer preview and may introduce compatibility-breaking changes; please open an issue if a newer DSH release changes its plugin loader or Markdown DOM.
+Last verified with `@deepseek-ai/dsh 0.1.2-rc.1` on 2026-09-05 using Node.js 22.23.2. DSH is currently a developer preview and may introduce compatibility-breaking changes; please open an issue if a newer DSH release changes its plugin loader or Markdown DOM.
 
 ## Install
 
@@ -79,7 +80,7 @@ flowchart LR
 ```
 ````
 
-The code block receives **Diagram / Code** controls and opens in diagram view by default.
+The code block receives **Code / Diagram** controls and opens in diagram view by default.
 
 ## Develop from source
 

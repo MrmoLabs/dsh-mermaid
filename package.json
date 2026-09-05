@@ -1,6 +1,6 @@
 {
   "name": "dsh-mermaid",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Render Mermaid code blocks in DeepSeek Harness with a diagram/code toggle.",
   "author": {
     "name": "Mrmo072",

@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-05
+
 - Localize plugin-owned interface, status, and error text in Simplified Chinese and English based on the host page and browser language.
 - Add polite render and download announcements plus accessible names for generated SVG diagrams.
 - Replace the single-item More menu with a direct SVG download action.
@@ -13,10 +15,10 @@ All notable changes to this project are documented in this file.
 - Split browser styles, SVG utilities, and fullscreen viewer behavior out of the client lifecycle orchestrator.
 - Split the monolithic browser integration test into focused rendering, viewer, concurrency, and lifecycle suites with a shared harness.
 - Remove the redundant Mermaid diagram title from the card toolbar while retaining the diagram-type badge.
-- Preserve the diagram-action layout width in code view so the Diagram and Code controls do not shift when toggled.
 - Keep fullscreen and SVG download controls visible in both Diagram and Code views, hiding them only when no rendered SVG is available.
 - Place the Code view control before the Diagram view control in the card toolbar.
 - Preserve the toolbar's viewport position when switching between Code and Diagram views.
+- Verify compatibility with `@deepseek-ai/dsh 0.1.2-rc.1` and Node.js 22.23.2.
 
 ## [0.3.1] - 2026-09-04
 
@@ -74,6 +76,8 @@ All notable changes to this project are documented in this file.
 - Render Mermaid fenced code blocks as SVG diagrams in DSH Web.
 - Add diagram/source switching, dark-theme rerendering, streaming support, strict Mermaid security, and npm/GitHub installers.
 
+[0.4.0]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/MrmoLabs/dsh-mermaid/compare/v0.1.2...v0.1.3
