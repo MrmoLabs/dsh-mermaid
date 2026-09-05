@@ -183,6 +183,9 @@ function createEntry(code) {
   const btnDownloadSvg = document.createElement('button');
   btnDownloadSvg.type = 'button';
   btnDownloadSvg.className = 'dsh-mmd-btn dsh-mmd-diagram-action';
+  const actionSlot = document.createElement('div');
+  actionSlot.className = 'dsh-mmd-action-slot';
+  actionSlot.append(btnFullscreen, btnDownloadSvg);
   const body = document.createElement('div');
   body.className = 'dsh-mmd-body';
   const pane = document.createElement('div');
@@ -200,12 +203,12 @@ function createEntry(code) {
   statusEl.setAttribute('aria-atomic', 'true');
 
   body.append(pane, codePane, errorEl, statusEl);
-  bar.append(badge, btnDiagram, btnCode, btnFullscreen, btnDownloadSvg);
+  bar.append(badge, btnDiagram, btnCode, actionSlot);
   wrapper.append(bar, body);
 
   const entry = {
     code, wrapper, bar, pane, codePane, errorEl, statusEl, badge, btnDiagram, btnCode,
-    btnFullscreen, btnDownloadSvg,
+    btnFullscreen, btnDownloadSvg, actionSlot,
     lastRendered: '', stableTimer: null, renderTimer: null, renderGeneration: 0,
     messageKey: 'rendering', messageParameters: {},
     statusKey: null, statusParameters: {},

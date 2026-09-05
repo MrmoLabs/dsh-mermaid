@@ -14,6 +14,7 @@ All notable changes to this project are documented in this file.
 - Split the monolithic browser integration test into focused rendering, viewer, concurrency, and lifecycle suites with a shared harness.
 - Remove the redundant Mermaid diagram title from the card toolbar while retaining the diagram-type badge.
 - Preserve the diagram-action layout width in code view so the Diagram and Code controls do not shift when toggled.
+- Hide fullscreen and SVG download controls with `display: none` in code view while a fixed action slot preserves toolbar alignment.
 
 ## [0.3.1] - 2026-09-04
 
