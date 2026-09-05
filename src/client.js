@@ -9,6 +9,7 @@ const STABLE_MS = 300;
 const RENDER_DEBOUNCE_MS = 500;
 const MAX_SOURCE_CHARS = 50_000;
 const MAX_SOURCE_LINES = 2_000;
+const MAX_TRACKED_DIAGRAMS = 500;
 const RUNTIME_REVISION = typeof __DSH_MERMAID_RUNTIME_REV__ === 'undefined'
   ? 'development'
   : __DSH_MERMAID_RUNTIME_REV__;
@@ -253,6 +254,12 @@ function createEntry(code) {
     if (!code.isConnected || !pre?.parentNode) {
       entries.delete(code);
       return;
+    }
+    if (wrappers.size >= MAX_TRACKED_DIAGRAMS) {
+      const oldestWrapper = wrappers.values().next().value;
+      const oldestEntry = oldestWrapper ? entries.get(oldestWrapper._dshCode) : null;
+      if (oldestEntry) disposeEntry(oldestEntry);
+      else wrappers.delete(oldestWrapper);
     }
     pre.parentNode.insertBefore(wrapper, pre);
     wrapper._dshCode = code;
