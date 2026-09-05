@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+- Localize plugin-owned interface, status, and error text in Simplified Chinese and English based on the host page and browser language.
+- Add polite render and download announcements plus accessible names for generated SVG diagrams.
+- Replace the single-item More menu with a direct SVG download action.
+- Keep keyboard focus inside the fullscreen viewer, isolate background content, and restore focus when the viewer closes.
+- Increase interactive targets to at least 28 CSS pixels and add a high-visibility keyboard focus indicator.
+
 ## [0.3.1] - 2026-09-04
 
 - Prevent Mermaid parse failures from leaving temporary built-in error SVG elements in the document while preserving the existing source-code fallback.

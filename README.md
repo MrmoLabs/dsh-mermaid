@@ -16,7 +16,10 @@ Render Mermaid fenced code blocks in DeepSeek Harness Web as SVG diagrams with a
 - Uses Mermaid's `securityLevel: strict`
 - Suppresses Mermaid's built-in parse-error SVG so failed renders fall back cleanly without leaving temporary error graphics in the document
 - Opens rendered diagrams in a fullscreen viewer with zoom, pan, reset, and fit-to-window controls
-- Exports the rendered diagram as a standalone SVG file from the card's **More** menu
+- Keeps keyboard focus inside the fullscreen viewer, isolates background content, and returns focus to the triggering control when closed
+- Announces render and download status to assistive technologies and gives generated SVG diagrams accessible names
+- Exports the rendered diagram as a standalone SVG file directly from the card
+- Localizes plugin-owned interface and status text in Simplified Chinese or English by following the page and browser language
 - Enhances only `<pre><code>` blocks and ignores inline code
 - Prevents stale asynchronous renders from overwriting newer streaming content
 - Rejects individual diagrams over 50,000 characters or 2,000 lines before invoking Mermaid
