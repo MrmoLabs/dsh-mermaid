@@ -11,6 +11,7 @@ All notable changes to this project are documented in this file.
 - Increase interactive targets to at least 28 CSS pixels and add a high-visibility keyboard focus indicator.
 - Hide the Diagram and Code view controls when rendering fails or exceeds limits, then restore them automatically after a successful rerender.
 - Split browser styles, SVG utilities, and fullscreen viewer behavior out of the client lifecycle orchestrator.
+- Split the monolithic browser integration test into focused rendering, viewer, concurrency, and lifecycle suites with a shared harness.
 
 ## [0.3.1] - 2026-09-04
 
