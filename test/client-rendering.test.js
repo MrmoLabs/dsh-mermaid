@@ -24,13 +24,14 @@ test('renders localized accessible cards and recovers from errors', async () => 
     assert.equal(card.querySelector('.dsh-mmd-code')?.textContent, 'flowchart LR\nA-->B');
     const diagramActions = card.querySelectorAll('.dsh-mmd-diagram-action');
     const actionSlot = card.querySelector('.dsh-mmd-action-slot');
-    assert.equal(window.getComputedStyle(diagramActions[0]).display, 'none');
-    assert.equal(window.getComputedStyle(diagramActions[1]).display, 'none');
-    assert.equal(window.getComputedStyle(actionSlot).minWidth, '180px');
+    assert.notEqual(window.getComputedStyle(diagramActions[0]).display, 'none');
+    assert.notEqual(window.getComputedStyle(diagramActions[1]).display, 'none');
+    assert.equal(diagramActions[0].parentElement, actionSlot);
+    assert.equal(diagramActions[1].parentElement, actionSlot);
     buttons[0].click();
     assert.equal(card.dataset.view, 'diagram');
     assert.equal(buttons[0].getAttribute('aria-pressed'), 'true');
-    assert.match(
+    assert.doesNotMatch(
       document.getElementById('dsh-mermaid/css')?.textContent || '',
       /\[data-view='code'\]\[data-state='ok'\] \.dsh-mmd-diagram-action\{display:none\}/,
     );

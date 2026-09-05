@@ -6,7 +6,7 @@ const CSS = `
 .dsh-mmd-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.1))}
 .dsh-mmd-btn:focus-visible{outline:2px solid var(--dsw-alias-button-primary-fill,#4c6ef5);outline-offset:2px}
 .dsh-mmd-btn[aria-pressed='true']{border-color:var(--dsw-alias-button-primary-fill,#4c6ef5);color:var(--dsw-alias-button-primary-fill,#4c6ef5);background:var(--dsw-alias-interactive-bg-active,rgba(76,110,245,.12))}
-.dsh-mmd-action-slot{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:180px}
+.dsh-mmd-action-slot{display:flex;align-items:center;justify-content:flex-end;gap:8px}
 .dsh-mmd-body{padding:10px 12px;overflow-x:auto}
 .dsh-mmd-pane{display:block}
 .dsh-mmd-pane svg{max-width:100%;height:auto;display:block;margin:0 auto}
@@ -20,7 +20,6 @@ const CSS = `
 .dsh-mmd[data-view='code'] .dsh-mmd-code{display:block}
 .dsh-mmd[data-view='code'][data-state='error'] .dsh-mmd-error{display:block}
 .dsh-mmd[data-state='error'] .dsh-mmd-view-control{display:none}
-.dsh-mmd[data-view='code'][data-state='ok'] .dsh-mmd-diagram-action{display:none}
 .dsh-mmd:not([data-state='ok']) .dsh-mmd-diagram-action{display:none}
 .dsh-mmd-viewer{position:fixed;z-index:2147483000;inset:0;display:flex;flex-direction:column;background:#fff;color:var(--dsw-alias-label-primary,#222)}
 body[data-ds-dark-theme] .dsh-mmd-viewer{background:#121212;color:var(--dsw-alias-label-primary,#f5f5f5)}
