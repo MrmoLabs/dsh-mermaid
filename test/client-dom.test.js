@@ -149,8 +149,7 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.equal(document.body.style.overflow, '');
 
     buttons[3].click();
-    assert.equal(card.querySelector('.dsh-mmd-menu')?.hidden, false);
-    card.querySelector('.dsh-mmd-menu-item')?.click();
+    assert.equal(card.querySelector('.dsh-mmd-menu'), null);
     assert.equal(downloadedName, 'mermaid-flowchart.svg');
     assert.equal(card.querySelector('[role="status"]')?.textContent, 'SVG 已下载。');
     assert.equal(objectUrls.length, 1);

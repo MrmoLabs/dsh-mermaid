@@ -19,11 +19,6 @@ const CSS = `
 .dsh-mmd-btn{appearance:none;border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.3));background:transparent;color:var(--dsw-alias-label-secondary,#666);border-radius:5px;font:12px/20px inherit;padding:0 10px;cursor:pointer}
 .dsh-mmd-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.1))}
 .dsh-mmd-btn[aria-pressed='true']{border-color:var(--dsw-alias-button-primary-fill,#4c6ef5);color:var(--dsw-alias-button-primary-fill,#4c6ef5);background:var(--dsw-alias-interactive-bg-active,rgba(76,110,245,.12))}
-.dsh-mmd-actions{position:relative;display:flex;align-items:center}
-.dsh-mmd-menu{position:absolute;z-index:20;right:0;top:calc(100% + 5px);min-width:132px;padding:4px;border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.3));border-radius:7px;background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:0 8px 24px rgba(0,0,0,.18)}
-.dsh-mmd-menu[hidden]{display:none}
-.dsh-mmd-menu-item{appearance:none;display:block;width:100%;border:0;border-radius:5px;padding:6px 10px;background:transparent;color:var(--dsw-alias-label-primary,#222);font:12px/20px inherit;text-align:left;cursor:pointer}
-.dsh-mmd-menu-item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.1))}
 .dsh-mmd-body{padding:10px 12px;overflow-x:auto}
 .dsh-mmd-pane{display:block}
 .dsh-mmd-pane svg{max-width:100%;height:auto;display:block;margin:0 auto}
@@ -124,7 +119,6 @@ function localizeEntry(entry) {
   entry.btnDiagram.textContent = t('diagramView');
   entry.btnCode.textContent = t('codeView');
   entry.btnFullscreen.textContent = t('fullscreen');
-  entry.btnMore.textContent = t('more');
   entry.btnDownloadSvg.textContent = t('downloadSvg');
   if (entry.statusKey) entry.statusEl.textContent = t(entry.statusKey, entry.statusParameters);
   for (const svg of [entry.pane.querySelector('svg'), viewer?.entry === entry ? viewer.stage.querySelector('svg') : null]) {
@@ -181,20 +175,6 @@ function setView(entry, view) {
   entry.wrapper.dataset.view = view;
   entry.btnDiagram.setAttribute('aria-pressed', String(view === 'diagram'));
   entry.btnCode.setAttribute('aria-pressed', String(view === 'code'));
-  if (view === 'code') closeEntryMenu(entry);
-}
-
-function closeEntryMenu(entry) {
-  if (!entry?.menu) return;
-  entry.menu.hidden = true;
-  entry.btnMore.setAttribute('aria-expanded', 'false');
-}
-
-function closeAllMenus(except) {
-  for (const wrapper of wrappers) {
-    const entry = entries.get(wrapper._dshCode);
-    if (entry && entry !== except) closeEntryMenu(entry);
-  }
 }
 
 function serializeSvg(svg) {
@@ -240,7 +220,6 @@ function downloadSvg(entry) {
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
   setEntryStatus(entry, 'downloaded');
-  closeEntryMenu(entry);
 }
 
 function svgDimensions(svg) {
@@ -472,23 +451,9 @@ function createEntry(code) {
   const btnFullscreen = document.createElement('button');
   btnFullscreen.type = 'button';
   btnFullscreen.className = 'dsh-mmd-btn dsh-mmd-diagram-action';
-  const actions = document.createElement('div');
-  actions.className = 'dsh-mmd-actions dsh-mmd-diagram-action';
-  const btnMore = document.createElement('button');
-  btnMore.type = 'button';
-  btnMore.className = 'dsh-mmd-btn';
-  btnMore.setAttribute('aria-haspopup', 'menu');
-  btnMore.setAttribute('aria-expanded', 'false');
-  const menu = document.createElement('div');
-  menu.className = 'dsh-mmd-menu';
-  menu.hidden = true;
-  menu.setAttribute('role', 'menu');
   const btnDownloadSvg = document.createElement('button');
   btnDownloadSvg.type = 'button';
-  btnDownloadSvg.className = 'dsh-mmd-menu-item';
-  btnDownloadSvg.setAttribute('role', 'menuitem');
-  menu.appendChild(btnDownloadSvg);
-  actions.append(btnMore, menu);
+  btnDownloadSvg.className = 'dsh-mmd-btn dsh-mmd-diagram-action';
   const body = document.createElement('div');
   body.className = 'dsh-mmd-body';
   const pane = document.createElement('div');
@@ -506,12 +471,12 @@ function createEntry(code) {
   statusEl.setAttribute('aria-atomic', 'true');
 
   body.append(pane, codePane, errorEl, statusEl);
-  bar.append(badge, label, btnDiagram, btnCode, btnFullscreen, actions);
+  bar.append(badge, label, btnDiagram, btnCode, btnFullscreen, btnDownloadSvg);
   wrapper.append(bar, body);
 
   const entry = {
     code, wrapper, bar, pane, codePane, errorEl, statusEl, badge, label, btnDiagram, btnCode,
-    btnFullscreen, btnMore, btnDownloadSvg, menu,
+    btnFullscreen, btnDownloadSvg,
     lastRendered: '', stableTimer: null, renderTimer: null, renderGeneration: 0,
     messageKey: 'rendering', messageParameters: {},
     statusKey: null, statusParameters: {},
@@ -522,14 +487,6 @@ function createEntry(code) {
   btnDiagram.addEventListener('click', () => setView(entry, 'diagram'));
   btnCode.addEventListener('click', () => setView(entry, 'code'));
   btnFullscreen.addEventListener('click', () => openViewer(entry));
-  btnMore.addEventListener('click', (event) => {
-    event.stopPropagation();
-    const opening = entry.menu.hidden;
-    closeAllMenus(entry);
-    entry.menu.hidden = !opening;
-    entry.btnMore.setAttribute('aria-expanded', String(opening));
-  });
-  menu.addEventListener('click', (event) => event.stopPropagation());
   btnDownloadSvg.addEventListener('click', () => downloadSvg(entry));
 
   entry.stableTimer = setTimeout(() => {
@@ -736,17 +693,14 @@ function apply(ctx) {
       if (mutations.some((mutation) => mutation.attributeName === 'lang')) refreshLocale();
     });
     localeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
-    const handleDocumentClick = () => closeAllMenus();
     const handleDocumentKeydown = (event) => {
       if (event.key === 'Escape') {
-        closeAllMenus();
         closeViewer();
       }
     };
     const handleWindowResize = () => {
       if (viewer && !viewer.overlay.hidden) fitViewer();
     };
-    document.addEventListener('click', handleDocumentClick);
     document.addEventListener('keydown', handleDocumentKeydown);
     window.addEventListener('resize', handleWindowResize);
 
@@ -756,7 +710,6 @@ function apply(ctx) {
       observer.disconnect();
       themeObserver.disconnect();
       localeObserver.disconnect();
-      document.removeEventListener('click', handleDocumentClick);
       document.removeEventListener('keydown', handleDocumentKeydown);
       window.removeEventListener('resize', handleWindowResize);
       for (const wrapper of [...wrappers]) {
