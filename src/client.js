@@ -32,6 +32,7 @@ const CSS = `
 .dsh-mmd[data-view='code'] .dsh-mmd-pane{display:none}
 .dsh-mmd[data-view='code'] .dsh-mmd-code{display:block}
 .dsh-mmd[data-view='code'][data-state='error'] .dsh-mmd-error{display:block}
+.dsh-mmd[data-state='error'] .dsh-mmd-view-control{display:none}
 .dsh-mmd[data-view='code'] .dsh-mmd-diagram-action,.dsh-mmd:not([data-state='ok']) .dsh-mmd-diagram-action{display:none}
 .dsh-mmd-viewer{position:fixed;z-index:2147483000;inset:0;display:flex;flex-direction:column;background:#fff;color:var(--dsw-alias-label-primary,#222)}
 body[data-ds-dark-theme] .dsh-mmd-viewer{background:#121212;color:var(--dsw-alias-label-primary,#f5f5f5)}
@@ -177,6 +178,11 @@ function setView(entry, view) {
   entry.wrapper.dataset.view = view;
   entry.btnDiagram.setAttribute('aria-pressed', String(view === 'diagram'));
   entry.btnCode.setAttribute('aria-pressed', String(view === 'code'));
+}
+
+function setViewControlsAvailable(entry, available) {
+  entry.btnDiagram.hidden = !available;
+  entry.btnCode.hidden = !available;
 }
 
 function serializeSvg(svg) {
@@ -484,11 +490,11 @@ function createEntry(code) {
   label.className = 'dsh-mmd-label';
   const btnDiagram = document.createElement('button');
   btnDiagram.type = 'button';
-  btnDiagram.className = 'dsh-mmd-btn';
+  btnDiagram.className = 'dsh-mmd-btn dsh-mmd-view-control';
   btnDiagram.setAttribute('aria-pressed', 'true');
   const btnCode = document.createElement('button');
   btnCode.type = 'button';
-  btnCode.className = 'dsh-mmd-btn';
+  btnCode.className = 'dsh-mmd-btn dsh-mmd-view-control';
   btnCode.setAttribute('aria-pressed', 'false');
   const btnFullscreen = document.createElement('button');
   btnFullscreen.type = 'button';
@@ -554,6 +560,7 @@ async function renderDiagram(entry) {
   entry.badge.textContent = diagramType(source) || 'mermaid';
   entry.codePane.textContent = entry.code.textContent || '';
   entry.wrapper.dataset.state = 'rendering';
+  setViewControlsAvailable(entry, true);
   entry.pane.dataset.state = 'loading';
   entry.messageKey = 'rendering';
   entry.messageParameters = {};
@@ -572,6 +579,7 @@ async function renderDiagram(entry) {
   if (limitMessage) {
     const message = t(limitMessage.key, limitMessage.parameters);
     entry.wrapper.dataset.state = 'error';
+    setViewControlsAvailable(entry, false);
     entry.pane.dataset.state = 'error';
     entry.messageKey = limitMessage.key;
     entry.messageParameters = limitMessage.parameters;
@@ -599,6 +607,7 @@ async function renderDiagram(entry) {
     entry.messageKey = null;
     entry.messageParameters = null;
     entry.wrapper.dataset.state = 'ok';
+    setViewControlsAvailable(entry, true);
     entry.pane.dataset.state = 'ok';
     setEntryStatus(entry, 'rendered');
     if (viewer?.entry === entry) updateViewerSvg(entry, false);
@@ -607,6 +616,7 @@ async function renderDiagram(entry) {
     const parameters = { detail: error?.message || String(error) };
     const message = t('renderFailed', parameters);
     entry.wrapper.dataset.state = 'error';
+    setViewControlsAvailable(entry, false);
     entry.pane.dataset.state = 'error';
     entry.messageKey = 'renderFailed';
     entry.messageParameters = parameters;

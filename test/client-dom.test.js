@@ -230,6 +230,16 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.match(invalidCard?.querySelector('.dsh-mmd-error')?.textContent || '', /渲染失败/);
     assert.equal(invalidCard?.querySelector('.dsh-mmd-code')?.textContent, 'flowchart LR\nA-->');
     assert.equal(invalidCard?.querySelector('[role="status"]')?.textContent, '图表渲染失败，已显示源代码。');
+    const invalidViewControls = invalidCard?.querySelectorAll('.dsh-mmd-view-control') || [];
+    assert.equal(invalidViewControls.length, 2);
+    assert.equal(invalidViewControls[0].hidden, true);
+    assert.equal(invalidViewControls[1].hidden, true);
+
+    invalidCode.textContent = 'flowchart LR\nA-->RECOVERED';
+    await wait(700);
+    assert.equal(invalidCard?.dataset.state, 'ok');
+    assert.equal(invalidViewControls[0].hidden, false);
+    assert.equal(invalidViewControls[1].hidden, false);
 
     const oversizedPre = document.createElement('pre');
     const oversizedCode = document.createElement('code');
@@ -245,6 +255,7 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.equal(oversizedCard?.dataset.state, 'error');
     assert.equal(oversizedCard?.dataset.view, 'code');
     assert.match(oversizedCard?.querySelector('.dsh-mmd-error')?.textContent || '', /2000 行/);
+    assert.equal(oversizedCard?.querySelector('.dsh-mmd-view-control')?.hidden, true);
     assert.equal(renderCalls.length, renderCountBeforeOversized);
 
     const streamingPre = document.createElement('pre');
