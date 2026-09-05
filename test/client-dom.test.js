@@ -108,6 +108,8 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     originalSvg.prepend(embeddedStyle);
 
     const buttons = card.querySelectorAll('.dsh-mmd-btn');
+    assert.equal(window.getComputedStyle(buttons[0]).minHeight, '28px');
+    assert.match(document.getElementById('dsh-mermaid/css')?.textContent || '', /\.dsh-mmd-btn:focus-visible\{outline:2px solid/);
     buttons[2].focus();
     buttons[2].click();
     const viewer = document.querySelector('.dsh-mmd-viewer');
