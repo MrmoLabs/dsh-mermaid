@@ -10,6 +10,7 @@ All notable changes to this project are documented in this file.
 - Keep keyboard focus inside the fullscreen viewer, isolate background content, and restore focus when the viewer closes.
 - Increase interactive targets to at least 28 CSS pixels and add a high-visibility keyboard focus indicator.
 - Hide the Diagram and Code view controls when rendering fails or exceeds limits, then restore them automatically after a successful rerender.
+- Split browser styles, SVG utilities, and fullscreen viewer behavior out of the client lifecycle orchestrator.
 
 ## [0.3.1] - 2026-09-04
 
