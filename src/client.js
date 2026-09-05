@@ -130,6 +130,32 @@ function setView(entry, view) {
   entry.btnCode.setAttribute('aria-pressed', String(view === 'code'));
 }
 
+function findScrollContainer(element) {
+  for (let parent = element.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+    const { overflowY } = window.getComputedStyle(parent);
+    if (/^(auto|scroll|overlay)$/.test(overflowY) && parent.scrollHeight > parent.clientHeight) {
+      return parent;
+    }
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
+function setViewFromControl(entry, view) {
+  if (entry.wrapper.dataset.view === view) return;
+  const toolbarTop = entry.bar.getBoundingClientRect().top;
+  const scrollContainer = findScrollContainer(entry.wrapper);
+  const adjustment = ++entry.viewAdjustment;
+  setView(entry, view);
+  window.requestAnimationFrame(() => {
+    if (adjustment !== entry.viewAdjustment || !entry.wrapper.isConnected) return;
+    const offset = entry.bar.getBoundingClientRect().top - toolbarTop;
+    if (Math.abs(offset) < 0.5) return;
+    const documentScroller = document.scrollingElement || document.documentElement;
+    if (scrollContainer === documentScroller) window.scrollBy(0, offset);
+    else scrollContainer.scrollTop += offset;
+  });
+}
+
 function setViewControlsAvailable(entry, available) {
   entry.btnDiagram.hidden = !available;
   entry.btnCode.hidden = !available;
@@ -209,15 +235,15 @@ function createEntry(code) {
   const entry = {
     code, wrapper, bar, pane, codePane, errorEl, statusEl, badge, btnDiagram, btnCode,
     btnFullscreen, btnDownloadSvg, actionSlot,
-    lastRendered: '', stableTimer: null, renderTimer: null, renderGeneration: 0,
+    lastRendered: '', stableTimer: null, renderTimer: null, renderGeneration: 0, viewAdjustment: 0,
     messageKey: 'rendering', messageParameters: {},
     statusKey: null, statusParameters: {},
   };
   entries.set(code, entry);
   localizeEntry(entry);
 
-  btnDiagram.addEventListener('click', () => setView(entry, 'diagram'));
-  btnCode.addEventListener('click', () => setView(entry, 'code'));
+  btnDiagram.addEventListener('click', () => setViewFromControl(entry, 'diagram'));
+  btnCode.addEventListener('click', () => setViewFromControl(entry, 'code'));
   btnFullscreen.addEventListener('click', () => fullscreenViewer.open(entry));
   btnDownloadSvg.addEventListener('click', () => downloadSvg(entry));
 
