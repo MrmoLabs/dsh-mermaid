@@ -31,6 +31,7 @@ const CSS = `
 .dsh-mmd-pane[data-state='error']{color:var(--dsw-alias-state-error-primary,#d33)}
 .dsh-mmd-code{display:none;margin:0;padding:12px 14px;overflow-x:auto;font:var(--dsl-code-block-content-font,var(--dsw-font-markdown-code-block,13px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace));color:var(--dsw-alias-label-primary,#e6e6e6);white-space:pre;tab-size:4}
 .dsh-mmd-error{display:none;font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-state-error-primary,#d33);padding:8px 14px 0;white-space:pre-wrap}
+.dsh-mmd-sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
 .dsh-mmd[data-view='code'] .dsh-mmd-body{padding:0}
 .dsh-mmd[data-view='code'] .dsh-mmd-pane{display:none}
 .dsh-mmd[data-view='code'] .dsh-mmd-code{display:block}
@@ -51,6 +52,7 @@ body[data-ds-dark-theme] .dsh-mmd-viewer{background:#121212;color:var(--dsw-alia
 `;
 
 let uid = 0;
+let accessibleTitleUid = 0;
 let currentLocale = 'en';
 let styleTag = null;
 let mermaidRuntime = null;
@@ -124,6 +126,11 @@ function localizeEntry(entry) {
   entry.btnFullscreen.textContent = t('fullscreen');
   entry.btnMore.textContent = t('more');
   entry.btnDownloadSvg.textContent = t('downloadSvg');
+  if (entry.statusKey) entry.statusEl.textContent = t(entry.statusKey, entry.statusParameters);
+  for (const svg of [entry.pane.querySelector('svg'), viewer?.entry === entry ? viewer.stage.querySelector('svg') : null]) {
+    const generatedTitle = svg?.querySelector('title[data-dsh-mmd-title]');
+    if (generatedTitle) generatedTitle.textContent = t('diagramTitle', { type: entry.badge.textContent || 'mermaid' });
+  }
   if (entry.messageKey && entry.pane.dataset.state !== 'ok') {
     const message = t(entry.messageKey, entry.messageParameters);
     entry.pane.textContent = message;
@@ -196,6 +203,28 @@ function serializeSvg(svg) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n${clone.outerHTML}`;
 }
 
+function setEntryStatus(entry, key, parameters = {}) {
+  entry.statusKey = key;
+  entry.statusParameters = parameters;
+  entry.statusEl.textContent = t(key, parameters);
+}
+
+function ensureSvgAccessibility(svg, entry) {
+  if (!svg) return;
+  svg.setAttribute('role', 'img');
+  if (svg.hasAttribute('aria-label') || svg.hasAttribute('aria-labelledby')) return;
+
+  let title = [...svg.children].find((child) => child.localName === 'title');
+  if (!title) {
+    title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    title.dataset.dshMmdTitle = 'true';
+    title.textContent = t('diagramTitle', { type: entry.badge.textContent || 'mermaid' });
+    svg.prepend(title);
+  }
+  if (!title.id) title.id = `dsh-mmd-title-${++accessibleTitleUid}`;
+  svg.setAttribute('aria-labelledby', title.id);
+}
+
 function downloadSvg(entry) {
   const svg = entry.pane.querySelector('svg');
   if (!svg) return;
@@ -210,6 +239,7 @@ function downloadSvg(entry) {
   anchor.click();
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
+  setEntryStatus(entry, 'downloaded');
   closeEntryMenu(entry);
 }
 
@@ -469,16 +499,22 @@ function createEntry(code) {
   codePane.textContent = code.textContent || '';
   const errorEl = document.createElement('div');
   errorEl.className = 'dsh-mmd-error';
+  const statusEl = document.createElement('div');
+  statusEl.className = 'dsh-mmd-sr-only';
+  statusEl.setAttribute('role', 'status');
+  statusEl.setAttribute('aria-live', 'polite');
+  statusEl.setAttribute('aria-atomic', 'true');
 
-  body.append(pane, codePane, errorEl);
+  body.append(pane, codePane, errorEl, statusEl);
   bar.append(badge, label, btnDiagram, btnCode, btnFullscreen, actions);
   wrapper.append(bar, body);
 
   const entry = {
-    code, wrapper, bar, pane, codePane, errorEl, badge, label, btnDiagram, btnCode,
+    code, wrapper, bar, pane, codePane, errorEl, statusEl, badge, label, btnDiagram, btnCode,
     btnFullscreen, btnMore, btnDownloadSvg, menu,
     lastRendered: '', stableTimer: null, renderTimer: null, renderGeneration: 0,
     messageKey: 'rendering', messageParameters: {},
+    statusKey: null, statusParameters: {},
   };
   entries.set(code, entry);
   localizeEntry(entry);
@@ -523,6 +559,7 @@ async function renderDiagram(entry) {
   entry.messageKey = 'rendering';
   entry.messageParameters = {};
   entry.pane.textContent = t('rendering');
+  setEntryStatus(entry, 'rendering');
 
   let limitMessage = null;
   if (source.length > MAX_SOURCE_CHARS) {
@@ -541,6 +578,7 @@ async function renderDiagram(entry) {
     entry.messageParameters = limitMessage.parameters;
     entry.pane.textContent = message;
     entry.errorEl.textContent = message;
+    setEntryStatus(entry, limitMessage.key, limitMessage.parameters);
     setView(entry, 'code');
     return;
   }
@@ -556,12 +594,14 @@ async function renderDiagram(entry) {
     if ((entry.code.textContent || '').trim() !== source) return;
     entry.pane.innerHTML = svg;
     const svgElement = entry.pane.querySelector('svg');
+    ensureSvgAccessibility(svgElement, entry);
     if (svgElement && bindFunctions) bindFunctions(svgElement);
     entry.lastRendered = source;
     entry.messageKey = null;
     entry.messageParameters = null;
     entry.wrapper.dataset.state = 'ok';
     entry.pane.dataset.state = 'ok';
+    setEntryStatus(entry, 'rendered');
     if (viewer?.entry === entry) updateViewerSvg(entry, false);
   } catch (error) {
     if (generation !== entry.renderGeneration || !entry.wrapper.isConnected) return;
@@ -573,6 +613,7 @@ async function renderDiagram(entry) {
     entry.messageParameters = parameters;
     entry.pane.textContent = message;
     entry.errorEl.textContent = message;
+    setEntryStatus(entry, 'renderFailedStatus');
     setView(entry, 'code');
   }
 }

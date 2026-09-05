@@ -95,10 +95,14 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.equal(card.dataset.view, 'diagram', card.querySelector('.dsh-mmd-pane')?.textContent);
     assert.equal(card.querySelector('.dsh-mmd-pane')?.dataset.state, 'ok');
     assert.equal(card.querySelectorAll('.dsh-mmd-pane svg').length, 1);
+    const originalSvg = card.querySelector('.dsh-mmd-pane svg');
     assert.equal(card.querySelector('.dsh-mmd-label')?.textContent, 'Mermaid 图');
+    assert.equal(card.querySelector('[role="status"]')?.textContent, 'Mermaid 图已渲染。');
+    assert.equal(originalSvg?.getAttribute('role'), 'img');
+    assert.equal(originalSvg?.querySelector('title')?.textContent, 'Mermaid flowchart 图');
+    assert.equal(originalSvg?.getAttribute('aria-labelledby'), originalSvg?.querySelector('title')?.id);
     assert.deepEqual(renderCalls, ['flowchart LR\nA-->B']);
 
-    const originalSvg = card.querySelector('.dsh-mmd-pane svg');
     const embeddedStyle = document.createElementNS('http://www.w3.org/2000/svg', 'style');
     embeddedStyle.textContent = '#diagram .node{fill:red}.edge{marker-end:url(#arrow)}';
     originalSvg.prepend(embeddedStyle);
@@ -148,6 +152,7 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.equal(card.querySelector('.dsh-mmd-menu')?.hidden, false);
     card.querySelector('.dsh-mmd-menu-item')?.click();
     assert.equal(downloadedName, 'mermaid-flowchart.svg');
+    assert.equal(card.querySelector('[role="status"]')?.textContent, 'SVG 已下载。');
     assert.equal(objectUrls.length, 1);
     assert.equal(objectUrls[0].type, 'image/svg+xml;charset=utf-8');
     await wait(10);
@@ -210,6 +215,7 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.equal(invalidCard?.dataset.view, 'code');
     assert.match(invalidCard?.querySelector('.dsh-mmd-error')?.textContent || '', /渲染失败/);
     assert.equal(invalidCard?.querySelector('.dsh-mmd-code')?.textContent, 'flowchart LR\nA-->');
+    assert.equal(invalidCard?.querySelector('[role="status"]')?.textContent, '图表渲染失败，已显示源代码。');
 
     const oversizedPre = document.createElement('pre');
     const oversizedCode = document.createElement('code');
