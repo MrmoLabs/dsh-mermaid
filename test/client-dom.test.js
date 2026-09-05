@@ -108,11 +108,21 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     originalSvg.prepend(embeddedStyle);
 
     const buttons = card.querySelectorAll('.dsh-mmd-btn');
+    buttons[2].focus();
     buttons[2].click();
     const viewer = document.querySelector('.dsh-mmd-viewer');
     assert.ok(viewer);
     assert.equal(viewer.hidden, false);
     assert.equal(document.body.style.overflow, 'hidden');
+    assert.equal(card.inert, true);
+    assert.equal(pre.inert, true);
+    const closeButton = viewer.querySelector('[aria-label="关闭全屏查看"]');
+    const zoomOutButton = viewer.querySelector('[aria-label="缩小"]');
+    assert.equal(document.activeElement, closeButton);
+    closeButton.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+    assert.equal(document.activeElement, zoomOutButton);
+    zoomOutButton.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }));
+    assert.equal(document.activeElement, closeButton);
     assert.equal(window.getComputedStyle(viewer).backgroundColor, '#fff');
     assert.equal(viewer.querySelectorAll('.dsh-mmd-viewer-stage svg').length, 1);
     const originalMarkerId = card.querySelector('.dsh-mmd-pane marker')?.id;
@@ -147,6 +157,9 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
     assert.equal(viewer.hidden, true);
     assert.equal(document.body.style.overflow, '');
+    assert.equal(card.inert, false);
+    assert.equal(pre.inert, false);
+    assert.equal(document.activeElement, buttons[2]);
 
     buttons[3].click();
     assert.equal(card.querySelector('.dsh-mmd-menu'), null);

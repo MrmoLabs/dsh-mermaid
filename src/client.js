@@ -319,12 +319,46 @@ function updateViewerSvg(entry, shouldFit) {
   if (shouldFit) fitViewer();
 }
 
+function viewerFocusableElements() {
+  if (!viewer) return [];
+  return [...viewer.overlay.querySelectorAll('button:not([disabled]),[href],[tabindex]:not([tabindex="-1"])')]
+    .filter((element) => !element.hidden);
+}
+
+function trapViewerFocus(event) {
+  if (!viewer || viewer.overlay.hidden || event.key !== 'Tab') return;
+  const focusable = viewerFocusableElements();
+  if (!focusable.length) {
+    event.preventDefault();
+    viewer.overlay.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable.at(-1);
+  const active = document.activeElement;
+  if (!viewer.overlay.contains(active)) {
+    event.preventDefault();
+    first.focus();
+  } else if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 function closeViewer() {
   if (!viewer || viewer.overlay.hidden) return;
+  const focusTarget = viewer.trigger;
   viewer.overlay.hidden = true;
   viewer.entry = null;
+  viewer.trigger = null;
   viewer.stage.replaceChildren();
   document.body.style.overflow = viewer.previousBodyOverflow;
+  for (const [element, wasInert] of viewer.inertedElements) element.inert = wasInert;
+  viewer.inertedElements = [];
+  if (focusTarget?.isConnected) focusTarget.focus();
 }
 
 function createViewer() {
@@ -364,7 +398,7 @@ function createViewer() {
   viewer = {
     overlay, title, viewport, stage, zoomOut, zoomLabel, zoomIn, fit, close, entry: null,
     scale: 1, panX: 0, panY: 0, dragging: false, pointerId: null,
-    lastX: 0, lastY: 0, previousBodyOverflow: '',
+    lastX: 0, lastY: 0, previousBodyOverflow: '', trigger: null, inertedElements: [],
   };
   zoomOut.addEventListener('click', () => setViewerScale(viewer.scale / 1.2));
   zoomLabel.addEventListener('click', () => {
@@ -413,6 +447,7 @@ function createViewer() {
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) closeViewer();
   });
+  overlay.addEventListener('keydown', trapViewerFocus);
   return viewer;
 }
 
@@ -420,11 +455,16 @@ function openViewer(entry) {
   if (!entry.pane.querySelector('svg')) return;
   const current = createViewer();
   current.entry = entry;
+  current.trigger = entry.btnFullscreen;
   current.previousBodyOverflow = document.body.style.overflow;
+  current.inertedElements = [...document.body.children]
+    .filter((element) => element !== current.overlay)
+    .map((element) => [element, Boolean(element.inert)]);
+  for (const [element] of current.inertedElements) element.inert = true;
   document.body.style.overflow = 'hidden';
   current.overlay.hidden = false;
   updateViewerSvg(entry, true);
-  current.overlay.focus?.();
+  current.close.focus();
 }
 
 function createEntry(code) {
