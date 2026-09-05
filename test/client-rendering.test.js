@@ -17,10 +17,14 @@ test('renders localized accessible cards and recovers from errors', async () => 
     assert.equal(svg?.querySelector('title')?.textContent, 'Mermaid flowchart 图');
     assert.equal(svg?.getAttribute('aria-labelledby'), svg?.querySelector('title')?.id);
 
-    const buttons = card.querySelectorAll('.dsh-mmd-btn');
-    buttons[1].click();
+    const viewControls = card.querySelectorAll('.dsh-mmd-view-control');
+    const codeButton = viewControls[0];
+    const diagramButton = viewControls[1];
+    assert.equal(codeButton.textContent, '代码');
+    assert.equal(diagramButton.textContent, '图形');
+    codeButton.click();
     assert.equal(card.dataset.view, 'code');
-    assert.equal(buttons[1].getAttribute('aria-pressed'), 'true');
+    assert.equal(codeButton.getAttribute('aria-pressed'), 'true');
     assert.equal(card.querySelector('.dsh-mmd-code')?.textContent, 'flowchart LR\nA-->B');
     const diagramActions = card.querySelectorAll('.dsh-mmd-diagram-action');
     const actionSlot = card.querySelector('.dsh-mmd-action-slot');
@@ -28,9 +32,9 @@ test('renders localized accessible cards and recovers from errors', async () => 
     assert.notEqual(window.getComputedStyle(diagramActions[1]).display, 'none');
     assert.equal(diagramActions[0].parentElement, actionSlot);
     assert.equal(diagramActions[1].parentElement, actionSlot);
-    buttons[0].click();
+    diagramButton.click();
     assert.equal(card.dataset.view, 'diagram');
-    assert.equal(buttons[0].getAttribute('aria-pressed'), 'true');
+    assert.equal(diagramButton.getAttribute('aria-pressed'), 'true');
     assert.doesNotMatch(
       document.getElementById('dsh-mermaid/css')?.textContent || '',
       /\[data-view='code'\]\[data-state='ok'\] \.dsh-mmd-diagram-action\{display:none\}/,
@@ -39,7 +43,8 @@ test('renders localized accessible cards and recovers from errors', async () => 
     document.documentElement.lang = 'en-US';
     await wait(10);
     assert.equal(card.querySelector('.dsh-mmd-label'), null);
-    assert.equal(buttons[0].textContent, 'Diagram');
+    assert.equal(codeButton.textContent, 'Code');
+    assert.equal(diagramButton.textContent, 'Diagram');
     document.documentElement.lang = 'zh-CN';
     await wait(10);
 
@@ -73,7 +78,7 @@ test('renders localized accessible cards and recovers from errors', async () => 
     code.textContent = 'flowchart LR\nA-->FINAL';
     await wait(700);
     assert.equal(card.querySelector('.dsh-mmd-pane')?.dataset.state, 'ok');
-    assert.equal(window.getComputedStyle(buttons[0]).minHeight, '28px');
+    assert.equal(window.getComputedStyle(codeButton).minHeight, '28px');
   } finally {
     await harness.cleanup();
   }

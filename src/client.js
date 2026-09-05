@@ -203,7 +203,7 @@ function createEntry(code) {
   statusEl.setAttribute('aria-atomic', 'true');
 
   body.append(pane, codePane, errorEl, statusEl);
-  bar.append(badge, btnDiagram, btnCode, actionSlot);
+  bar.append(badge, btnCode, btnDiagram, actionSlot);
   wrapper.append(bar, body);
 
   const entry = {

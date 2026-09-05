@@ -15,6 +15,7 @@ All notable changes to this project are documented in this file.
 - Remove the redundant Mermaid diagram title from the card toolbar while retaining the diagram-type badge.
 - Preserve the diagram-action layout width in code view so the Diagram and Code controls do not shift when toggled.
 - Keep fullscreen and SVG download controls visible in both Diagram and Code views, hiding them only when no rendered SVG is available.
+- Place the Code view control before the Diagram view control in the card toolbar.
 
 ## [0.3.1] - 2026-09-04
 
