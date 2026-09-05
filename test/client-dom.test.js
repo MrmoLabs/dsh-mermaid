@@ -29,6 +29,7 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
   let dispose;
   let restoreMermaidRuntime;
   try {
+    document.documentElement.lang = 'zh-CN';
     const objectUrls = [];
     const revokedUrls = [];
     let downloadedName = '';
@@ -94,6 +95,7 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.equal(card.dataset.view, 'diagram', card.querySelector('.dsh-mmd-pane')?.textContent);
     assert.equal(card.querySelector('.dsh-mmd-pane')?.dataset.state, 'ok');
     assert.equal(card.querySelectorAll('.dsh-mmd-pane svg').length, 1);
+    assert.equal(card.querySelector('.dsh-mmd-label')?.textContent, 'Mermaid 图');
     assert.deepEqual(renderCalls, ['flowchart LR\nA-->B']);
 
     const originalSvg = card.querySelector('.dsh-mmd-pane svg');
@@ -175,6 +177,13 @@ test('handles the Mermaid card lifecycle, themes, and stale renders', async () =
     assert.equal(initializedOptions.at(-1).suppressErrorRendering, true);
     assert.equal(initializedOptions.at(-1).maxTextSize, 50_000);
     assert.equal(initializedOptions.at(-1).maxEdges, 2_000);
+
+    document.documentElement.lang = 'en-US';
+    await wait(10);
+    assert.equal(card.querySelector('.dsh-mmd-label')?.textContent, 'Mermaid diagram');
+    assert.equal(buttons[0].textContent, 'Diagram');
+    document.documentElement.lang = 'zh-CN';
+    await wait(10);
 
     code.textContent = 'flowchart LR\nSLOW-->Z';
     await wait(600);

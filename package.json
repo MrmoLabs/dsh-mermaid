@@ -36,7 +36,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "node --check bin/dsh-mermaid.mjs && node --check scripts/build.mjs && node --check src/client.js && node --check src/detection.js && node --check src/index.js && node --check src/mermaid-runtime.js && node --test",
+    "check": "node --check bin/dsh-mermaid.mjs && node --check scripts/build.mjs && node --check src/client.js && node --check src/detection.js && node --check src/i18n.js && node --check src/index.js && node --check src/mermaid-runtime.js && node --test",
     "prepare": "npm run build",
     "prepack": "npm run check"
   },

@@ -1,4 +1,5 @@
 import { diagramType, hasMermaidLanguage, isMermaidSource } from './detection.js';
+import { resolveLocale, translate } from './i18n.js';
 
 const TAG_ID = 'dsh-mermaid/css';
 const STABLE_MS = 300;
@@ -50,6 +51,7 @@ body[data-ds-dark-theme] .dsh-mmd-viewer{background:#121212;color:var(--dsw-alia
 `;
 
 let uid = 0;
+let currentLocale = 'en';
 let styleTag = null;
 let mermaidRuntime = null;
 let runtimePromise = null;
@@ -89,6 +91,53 @@ function loadMermaidRuntime() {
 
 function isDark() {
   return document.body?.hasAttribute('data-ds-dark-theme') ?? false;
+}
+
+function t(key, parameters) {
+  return translate(currentLocale, key, parameters);
+}
+
+function detectLocale() {
+  const languages = [...(navigator.languages || [])];
+  if (navigator.language && !languages.includes(navigator.language)) languages.push(navigator.language);
+  return resolveLocale(document.documentElement?.lang, languages);
+}
+
+function localizeViewer() {
+  if (!viewer) return;
+  viewer.overlay.setAttribute('aria-label', t('viewerLabel'));
+  viewer.zoomOut.setAttribute('aria-label', t('zoomOut'));
+  viewer.zoomLabel.setAttribute('aria-label', t('resetZoom'));
+  viewer.zoomIn.setAttribute('aria-label', t('zoomIn'));
+  viewer.fit.textContent = t('fitWindow');
+  viewer.fit.setAttribute('aria-label', t('fitWindow'));
+  viewer.close.textContent = t('closeViewer');
+  viewer.close.setAttribute('aria-label', t('closeViewer'));
+  if (viewer.entry) viewer.title.textContent = t('viewerTitle', { type: viewer.entry.badge.textContent || 'mermaid' });
+}
+
+function localizeEntry(entry) {
+  entry.label.textContent = t('diagramLabel');
+  entry.bar.setAttribute('aria-label', t('viewOptions'));
+  entry.btnDiagram.textContent = t('diagramView');
+  entry.btnCode.textContent = t('codeView');
+  entry.btnFullscreen.textContent = t('fullscreen');
+  entry.btnMore.textContent = t('more');
+  entry.btnDownloadSvg.textContent = t('downloadSvg');
+  if (entry.messageKey && entry.pane.dataset.state !== 'ok') {
+    const message = t(entry.messageKey, entry.messageParameters);
+    entry.pane.textContent = message;
+    if (entry.wrapper.dataset.state === 'error') entry.errorEl.textContent = message;
+  }
+}
+
+function refreshLocale() {
+  currentLocale = detectLocale();
+  for (const wrapper of wrappers) {
+    const entry = entries.get(wrapper._dshCode);
+    if (entry) localizeEntry(entry);
+  }
+  localizeViewer();
 }
 
 function initializeMermaid(runtime) {
@@ -257,7 +306,7 @@ function updateViewerSvg(entry, shouldFit) {
   clone.setAttribute('width', String(dimensions.width));
   clone.setAttribute('height', String(dimensions.height));
   viewer.stage.replaceChildren(clone);
-  viewer.title.textContent = `${entry.badge.textContent || 'mermaid'} · Mermaid`;
+  viewer.title.textContent = t('viewerTitle', { type: entry.badge.textContent || 'mermaid' });
   if (shouldFit) fitViewer();
 }
 
@@ -276,7 +325,7 @@ function createViewer() {
   overlay.hidden = true;
   overlay.setAttribute('role', 'dialog');
   overlay.setAttribute('aria-modal', 'true');
-  overlay.setAttribute('aria-label', 'Mermaid 图全屏查看');
+  overlay.setAttribute('aria-label', t('viewerLabel'));
   overlay.tabIndex = -1;
   const toolbar = document.createElement('div');
   toolbar.className = 'dsh-mmd-viewer-bar';
@@ -290,11 +339,11 @@ function createViewer() {
     element.setAttribute('aria-label', label);
     return element;
   };
-  const zoomOut = button('−', '缩小');
-  const zoomLabel = button('100%', '恢复到 100%');
-  const zoomIn = button('+', '放大');
-  const fit = button('适应窗口', '适应窗口');
-  const close = button('关闭', '关闭全屏查看');
+  const zoomOut = button('−', t('zoomOut'));
+  const zoomLabel = button('100%', t('resetZoom'));
+  const zoomIn = button('+', t('zoomIn'));
+  const fit = button(t('fitWindow'), t('fitWindow'));
+  const close = button(t('closeViewer'), t('closeViewer'));
   const viewport = document.createElement('div');
   viewport.className = 'dsh-mmd-viewer-viewport';
   const stage = document.createElement('div');
@@ -304,7 +353,7 @@ function createViewer() {
   overlay.append(toolbar, viewport);
   document.body.appendChild(overlay);
   viewer = {
-    overlay, title, viewport, stage, zoomLabel, entry: null,
+    overlay, title, viewport, stage, zoomOut, zoomLabel, zoomIn, fit, close, entry: null,
     scale: 1, panX: 0, panY: 0, dragging: false, pointerId: null,
     lastX: 0, lastY: 0, previousBodyOverflow: '',
   };
@@ -376,32 +425,28 @@ function createEntry(code) {
 
   const bar = document.createElement('div');
   bar.className = 'dsh-mmd-bar';
+  bar.setAttribute('role', 'group');
   const badge = document.createElement('span');
   badge.className = 'dsh-mmd-badge';
   badge.textContent = 'mermaid';
   const label = document.createElement('span');
   label.className = 'dsh-mmd-label';
-  label.textContent = 'mermaid 图';
   const btnDiagram = document.createElement('button');
   btnDiagram.type = 'button';
   btnDiagram.className = 'dsh-mmd-btn';
-  btnDiagram.textContent = '图';
   btnDiagram.setAttribute('aria-pressed', 'true');
   const btnCode = document.createElement('button');
   btnCode.type = 'button';
   btnCode.className = 'dsh-mmd-btn';
-  btnCode.textContent = '代码';
   btnCode.setAttribute('aria-pressed', 'false');
   const btnFullscreen = document.createElement('button');
   btnFullscreen.type = 'button';
   btnFullscreen.className = 'dsh-mmd-btn dsh-mmd-diagram-action';
-  btnFullscreen.textContent = '全屏';
   const actions = document.createElement('div');
   actions.className = 'dsh-mmd-actions dsh-mmd-diagram-action';
   const btnMore = document.createElement('button');
   btnMore.type = 'button';
   btnMore.className = 'dsh-mmd-btn';
-  btnMore.textContent = '更多';
   btnMore.setAttribute('aria-haspopup', 'menu');
   btnMore.setAttribute('aria-expanded', 'false');
   const menu = document.createElement('div');
@@ -411,7 +456,6 @@ function createEntry(code) {
   const btnDownloadSvg = document.createElement('button');
   btnDownloadSvg.type = 'button';
   btnDownloadSvg.className = 'dsh-mmd-menu-item';
-  btnDownloadSvg.textContent = '下载 SVG';
   btnDownloadSvg.setAttribute('role', 'menuitem');
   menu.appendChild(btnDownloadSvg);
   actions.append(btnMore, menu);
@@ -420,7 +464,6 @@ function createEntry(code) {
   const pane = document.createElement('div');
   pane.className = 'dsh-mmd-pane';
   pane.dataset.state = 'loading';
-  pane.textContent = '渲染中…';
   const codePane = document.createElement('pre');
   codePane.className = 'dsh-mmd-code';
   codePane.textContent = code.textContent || '';
@@ -432,11 +475,13 @@ function createEntry(code) {
   wrapper.append(bar, body);
 
   const entry = {
-    code, wrapper, pane, codePane, errorEl, badge, btnDiagram, btnCode,
+    code, wrapper, bar, pane, codePane, errorEl, badge, label, btnDiagram, btnCode,
     btnFullscreen, btnMore, btnDownloadSvg, menu,
     lastRendered: '', stableTimer: null, renderTimer: null, renderGeneration: 0,
+    messageKey: 'rendering', messageParameters: {},
   };
   entries.set(code, entry);
+  localizeEntry(entry);
 
   btnDiagram.addEventListener('click', () => setView(entry, 'diagram'));
   btnCode.addEventListener('click', () => setView(entry, 'code'));
@@ -475,21 +520,25 @@ async function renderDiagram(entry) {
   entry.codePane.textContent = entry.code.textContent || '';
   entry.wrapper.dataset.state = 'rendering';
   entry.pane.dataset.state = 'loading';
-  entry.pane.textContent = '渲染中…';
+  entry.messageKey = 'rendering';
+  entry.messageParameters = {};
+  entry.pane.textContent = t('rendering');
 
-  let limitDetail = '';
+  let limitMessage = null;
   if (source.length > MAX_SOURCE_CHARS) {
-    limitDetail = `源码长度 ${source.length} 字符，限制为 ${MAX_SOURCE_CHARS} 字符`;
+    limitMessage = { key: 'tooLong', parameters: { actual: source.length, limit: MAX_SOURCE_CHARS } };
   } else {
     const lineCount = source.split('\n', MAX_SOURCE_LINES + 1).length;
     if (lineCount > MAX_SOURCE_LINES) {
-      limitDetail = `源码共 ${lineCount} 行，限制为 ${MAX_SOURCE_LINES} 行`;
+      limitMessage = { key: 'tooManyLines', parameters: { actual: lineCount, limit: MAX_SOURCE_LINES } };
     }
   }
-  if (limitDetail) {
-    const message = `diagram 未渲染: ${limitDetail}`;
+  if (limitMessage) {
+    const message = t(limitMessage.key, limitMessage.parameters);
     entry.wrapper.dataset.state = 'error';
     entry.pane.dataset.state = 'error';
+    entry.messageKey = limitMessage.key;
+    entry.messageParameters = limitMessage.parameters;
     entry.pane.textContent = message;
     entry.errorEl.textContent = message;
     setView(entry, 'code');
@@ -509,14 +558,19 @@ async function renderDiagram(entry) {
     const svgElement = entry.pane.querySelector('svg');
     if (svgElement && bindFunctions) bindFunctions(svgElement);
     entry.lastRendered = source;
+    entry.messageKey = null;
+    entry.messageParameters = null;
     entry.wrapper.dataset.state = 'ok';
     entry.pane.dataset.state = 'ok';
     if (viewer?.entry === entry) updateViewerSvg(entry, false);
   } catch (error) {
     if (generation !== entry.renderGeneration || !entry.wrapper.isConnected) return;
-    const message = `diagram 渲染失败: ${error?.message || String(error)}`;
+    const parameters = { detail: error?.message || String(error) };
+    const message = t('renderFailed', parameters);
     entry.wrapper.dataset.state = 'error';
     entry.pane.dataset.state = 'error';
+    entry.messageKey = 'renderFailed';
+    entry.messageParameters = parameters;
     entry.pane.textContent = message;
     entry.errorEl.textContent = message;
     setView(entry, 'code');
@@ -628,6 +682,7 @@ function reRenderAll() {
 function apply(ctx) {
   ctx.effect(() => {
     if (typeof document === 'undefined' || !document.body) return undefined;
+    currentLocale = detectLocale();
     injectCss();
 
     const observer = new MutationObserver(handleMutations);
@@ -636,6 +691,10 @@ function apply(ctx) {
       if (mutations.some((mutation) => mutation.attributeName === 'data-ds-dark-theme')) reRenderAll();
     });
     themeObserver.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] });
+    const localeObserver = new MutationObserver((mutations) => {
+      if (mutations.some((mutation) => mutation.attributeName === 'lang')) refreshLocale();
+    });
+    localeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
     const handleDocumentClick = () => closeAllMenus();
     const handleDocumentKeydown = (event) => {
       if (event.key === 'Escape') {
@@ -655,6 +714,7 @@ function apply(ctx) {
     return () => {
       observer.disconnect();
       themeObserver.disconnect();
+      localeObserver.disconnect();
       document.removeEventListener('click', handleDocumentClick);
       document.removeEventListener('keydown', handleDocumentKeydown);
       window.removeEventListener('resize', handleWindowResize);
