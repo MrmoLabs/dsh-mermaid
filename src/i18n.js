@@ -1,6 +1,5 @@
 const MESSAGES = {
   en: {
-    diagramLabel: 'Mermaid diagram',
     viewOptions: 'Mermaid view options',
     diagramView: 'Diagram',
     codeView: 'Code',
@@ -23,7 +22,6 @@ const MESSAGES = {
     downloaded: 'SVG downloaded.',
   },
   'zh-CN': {
-    diagramLabel: 'Mermaid 图',
     viewOptions: 'Mermaid 视图选项',
     diagramView: '图形',
     codeView: '代码',

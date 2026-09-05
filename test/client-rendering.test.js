@@ -10,7 +10,7 @@ test('renders localized accessible cards and recovers from errors', async () => 
     const card = document.querySelector('.dsh-mmd');
     assert.ok(card, 'a Mermaid card should be inserted');
     assert.equal(card.dataset.state, 'ok');
-    assert.equal(card.querySelector('.dsh-mmd-label')?.textContent, 'Mermaid 图');
+    assert.equal(card.querySelector('.dsh-mmd-label'), null);
     assert.equal(card.querySelector('[role="status"]')?.textContent, 'Mermaid 图已渲染。');
     const svg = card.querySelector('.dsh-mmd-pane svg');
     assert.equal(svg?.getAttribute('role'), 'img');
@@ -25,7 +25,7 @@ test('renders localized accessible cards and recovers from errors', async () => 
 
     document.documentElement.lang = 'en-US';
     await wait(10);
-    assert.equal(card.querySelector('.dsh-mmd-label')?.textContent, 'Mermaid diagram');
+    assert.equal(card.querySelector('.dsh-mmd-label'), null);
     assert.equal(buttons[0].textContent, 'Diagram');
     document.documentElement.lang = 'zh-CN';
     await wait(10);

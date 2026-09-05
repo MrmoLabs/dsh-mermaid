@@ -68,7 +68,6 @@ function detectLocale() {
 }
 
 function localizeEntry(entry) {
-  entry.label.textContent = t('diagramLabel');
   entry.bar.setAttribute('aria-label', t('viewOptions'));
   entry.btnDiagram.textContent = t('diagramView');
   entry.btnCode.textContent = t('codeView');
@@ -170,8 +169,6 @@ function createEntry(code) {
   const badge = document.createElement('span');
   badge.className = 'dsh-mmd-badge';
   badge.textContent = 'mermaid';
-  const label = document.createElement('span');
-  label.className = 'dsh-mmd-label';
   const btnDiagram = document.createElement('button');
   btnDiagram.type = 'button';
   btnDiagram.className = 'dsh-mmd-btn dsh-mmd-view-control';
@@ -203,11 +200,11 @@ function createEntry(code) {
   statusEl.setAttribute('aria-atomic', 'true');
 
   body.append(pane, codePane, errorEl, statusEl);
-  bar.append(badge, label, btnDiagram, btnCode, btnFullscreen, btnDownloadSvg);
+  bar.append(badge, btnDiagram, btnCode, btnFullscreen, btnDownloadSvg);
   wrapper.append(bar, body);
 
   const entry = {
-    code, wrapper, bar, pane, codePane, errorEl, statusEl, badge, label, btnDiagram, btnCode,
+    code, wrapper, bar, pane, codePane, errorEl, statusEl, badge, btnDiagram, btnCode,
     btnFullscreen, btnDownloadSvg,
     lastRendered: '', stableTimer: null, renderTimer: null, renderGeneration: 0,
     messageKey: 'rendering', messageParameters: {},

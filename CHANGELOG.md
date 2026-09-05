@@ -12,6 +12,7 @@ All notable changes to this project are documented in this file.
 - Hide the Diagram and Code view controls when rendering fails or exceeds limits, then restore them automatically after a successful rerender.
 - Split browser styles, SVG utilities, and fullscreen viewer behavior out of the client lifecycle orchestrator.
 - Split the monolithic browser integration test into focused rendering, viewer, concurrency, and lifecycle suites with a shared harness.
+- Remove the redundant Mermaid diagram title from the card toolbar while retaining the diagram-type badge.
 
 ## [0.3.1] - 2026-09-04
 
