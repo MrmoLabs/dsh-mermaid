@@ -22,6 +22,18 @@ test('renders localized accessible cards and recovers from errors', async () => 
     assert.equal(card.dataset.view, 'code');
     assert.equal(buttons[1].getAttribute('aria-pressed'), 'true');
     assert.equal(card.querySelector('.dsh-mmd-code')?.textContent, 'flowchart LR\nA-->B');
+    const diagramActions = card.querySelectorAll('.dsh-mmd-diagram-action');
+    assert.equal(window.getComputedStyle(diagramActions[0]).visibility, 'hidden');
+    assert.notEqual(window.getComputedStyle(diagramActions[0]).display, 'none');
+    assert.equal(window.getComputedStyle(diagramActions[1]).visibility, 'hidden');
+    assert.notEqual(window.getComputedStyle(diagramActions[1]).display, 'none');
+    buttons[0].click();
+    assert.equal(card.dataset.view, 'diagram');
+    assert.equal(buttons[0].getAttribute('aria-pressed'), 'true');
+    assert.match(
+      document.getElementById('dsh-mermaid/css')?.textContent || '',
+      /\[data-view='code'\]\[data-state='ok'\] \.dsh-mmd-diagram-action\{visibility:hidden;pointer-events:none\}/,
+    );
 
     document.documentElement.lang = 'en-US';
     await wait(10);
@@ -54,6 +66,7 @@ test('renders localized accessible cards and recovers from errors', async () => 
     assert.equal(oversizedCard?.dataset.state, 'error');
     assert.match(oversizedCard?.querySelector('.dsh-mmd-error')?.textContent || '', /2000 行/);
     assert.equal(oversizedCard?.querySelector('.dsh-mmd-view-control')?.hidden, true);
+    assert.equal(window.getComputedStyle(oversizedCard?.querySelector('.dsh-mmd-diagram-action')).display, 'none');
     assert.equal(state.renderCalls.length, renderCountBeforeOversized);
 
     code.textContent = 'flowchart LR\nA-->FINAL';

@@ -19,7 +19,8 @@ const CSS = `
 .dsh-mmd[data-view='code'] .dsh-mmd-code{display:block}
 .dsh-mmd[data-view='code'][data-state='error'] .dsh-mmd-error{display:block}
 .dsh-mmd[data-state='error'] .dsh-mmd-view-control{display:none}
-.dsh-mmd[data-view='code'] .dsh-mmd-diagram-action,.dsh-mmd:not([data-state='ok']) .dsh-mmd-diagram-action{display:none}
+.dsh-mmd[data-view='code'][data-state='ok'] .dsh-mmd-diagram-action{visibility:hidden;pointer-events:none}
+.dsh-mmd:not([data-state='ok']) .dsh-mmd-diagram-action{display:none}
 .dsh-mmd-viewer{position:fixed;z-index:2147483000;inset:0;display:flex;flex-direction:column;background:#fff;color:var(--dsw-alias-label-primary,#222)}
 body[data-ds-dark-theme] .dsh-mmd-viewer{background:#121212;color:var(--dsw-alias-label-primary,#f5f5f5)}
 .dsh-mmd-viewer[hidden]{display:none}
