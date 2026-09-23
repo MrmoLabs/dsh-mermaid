@@ -1,4 +1,9 @@
-import { diagramType, hasMermaidLanguage, isMermaidSource } from './detection.js';
+import {
+  diagramType,
+  hasExplicitLanguage,
+  hasMermaidLanguage,
+  isMermaidSource,
+} from './detection.js';
 import { resolveLocale, translate } from './i18n.js';
 import { CSS } from './styles.js';
 import { ensureSvgAccessibility, localizeGeneratedSvgTitle, serializeSvg } from './svg.js';
@@ -121,7 +126,9 @@ function removeCss() {
 function isMermaidCodeBlock(code) {
   const pre = code?.closest?.('pre');
   if (!pre) return false;
-  return hasMermaidLanguage(code.classList) || isMermaidSource((code.textContent || '').trim());
+  if (hasMermaidLanguage(code.classList)) return true;
+  if (hasExplicitLanguage(code.classList)) return false;
+  return isMermaidSource((code.textContent || '').trim());
 }
 
 function setView(entry, view) {

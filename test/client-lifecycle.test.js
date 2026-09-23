@@ -30,3 +30,21 @@ test('discovers streamed blocks, remounts removed cards, and cleans up', async (
     await harness.cleanup();
   }
 });
+
+test('uses source fallback only when a code block has no explicit language', async () => {
+  const harness = await createClientHarness({ initialSource: null });
+  const { addCodeBlock, document, wait } = harness;
+  try {
+    const graph = addCodeBlock('graph LR\nA-->B', '');
+    const arduino = addCodeBlock('flowchart TD\nA-->B', 'language-arduino');
+
+    await wait(1_100);
+
+    assert.equal(graph.pre.previousElementSibling?.className, 'dsh-mmd');
+    assert.equal(graph.pre.previousElementSibling?.dataset.state, 'ok');
+    assert.notEqual(arduino.pre.previousElementSibling?.className, 'dsh-mmd');
+    assert.equal(document.querySelectorAll('.dsh-mmd').length, 1);
+  } finally {
+    await harness.cleanup();
+  }
+});

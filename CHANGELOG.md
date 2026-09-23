@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-23
+
+- Fix detection of Mermaid diagrams using graph syntax and avoid treating explicitly labeled non-Mermaid code blocks as diagrams.
+
 ## [0.4.0] - 2026-09-05
 
 - Localize plugin-owned interface, status, and error text in Simplified Chinese and English based on the host page and browser language.

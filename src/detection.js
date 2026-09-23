@@ -2,7 +2,7 @@ const LANG_RE = /^language-(?:mermaid|mermaidjs|mmd)$/i;
 const DIAGRAM_TYPE_RE = /^\s*([A-Za-z][\w-]*)/;
 
 const MERMAID_TYPES = new Set([
-  'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram',
+  'flowchart', 'graph', 'sequenceDiagram', 'classDiagram', 'stateDiagram',
   'stateDiagram-v2', 'erDiagram', 'gantt', 'pie', 'journey', 'timeline',
   'mindmap', 'gitGraph', 'quadrantChart', 'requirementDiagram', 'c4Context',
   'c4Container', 'c4Component', 'c4Dynamic', 'c4Deployment', 'block',
@@ -18,8 +18,12 @@ function hasMermaidLanguage(classNames) {
   return Array.from(classNames || []).some((name) => LANG_RE.test(name));
 }
 
+function hasExplicitLanguage(classNames) {
+  return Array.from(classNames || []).some((name) => /^language-/i.test(name));
+}
+
 function isMermaidSource(source) {
   return MERMAID_TYPES.has(diagramType(source));
 }
 
-export { diagramType, hasMermaidLanguage, isMermaidSource };
+export { diagramType, hasExplicitLanguage, hasMermaidLanguage, isMermaidSource };
