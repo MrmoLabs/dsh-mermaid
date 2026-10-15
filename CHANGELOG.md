@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+- Localize the GitHub-source installer CLI in English and Simplified Chinese, with an explicit language override and profile-specific restart guidance for DSH Desktop.
+- Show a localized missing-DSH error on Windows and use the system language when environment locale values are neutral.
+
 ## [0.4.1] - 2026-09-23
 
 - Fix detection of Mermaid diagrams using graph syntax and avoid treating explicitly labeled non-Mermaid code blocks as diagrams.

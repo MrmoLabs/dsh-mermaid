@@ -53,6 +53,8 @@ npx.cmd -y github:MrmoLabs/dsh-mermaid install
 
 该命令会运行仓库提供的 `dsh-mermaid` 安装器，再让 DSH 把 GitHub 源安装到 web profile。GitHub 源会在安装阶段构建。如果 pnpm 提示阻止了 build script，请把它输出的精确包名加入 profile 的 `pnpm-workspace.yaml` `allowBuilds`，然后重新执行命令。普通用户建议优先使用 npm 稳定版。
 
+安装到 DSH Desktop 时，在安装器命令后添加 `--profile desktop`。安装器自身的帮助、错误和完成提示支持英文与简体中文。它依次读取 `DSH_MERMAID_LANG`、`DSH_LANG`、`LC_ALL`、`LC_MESSAGES`、`LANG`、`LANGUAGE`，然后使用系统语言；`C`、`POSIX` 等不指定自然语言的区域值会被跳过。可设置 `DSH_MERMAID_LANG=en` 或 `DSH_MERMAID_LANG=zh-CN` 覆盖。此设置不会改变 DSH 或 pnpm 输出的文案。
+
 ## 更新和卸载
 
 更新 npm 稳定版：

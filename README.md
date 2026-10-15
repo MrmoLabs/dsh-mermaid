@@ -53,6 +53,8 @@ npx.cmd -y github:MrmoLabs/dsh-mermaid install
 
 This runs the repository's `dsh-mermaid` installer, which asks DSH to install the GitHub source into the web profile. GitHub installation builds the package during installation. If pnpm reports that it blocked a build script, add the exact package key shown by pnpm to `allowBuilds` in the profile's `pnpm-workspace.yaml`, then run the command again. Prefer the npm release for normal use.
 
+For DSH Desktop, add `--profile desktop` to the installer command. The installer displays its own help, errors, and completion messages in English or Simplified Chinese. It checks `DSH_MERMAID_LANG`, `DSH_LANG`, `LC_ALL`, `LC_MESSAGES`, `LANG`, and `LANGUAGE` in that order, then uses the system language. Neutral `C`/`POSIX` locale values are skipped. Set `DSH_MERMAID_LANG=en` or `DSH_MERMAID_LANG=zh-CN` to override the choice. This setting does not change messages printed by DSH or pnpm.
+
 ## Update and uninstall
 
 Update the npm release:
