@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
-test('browser bundle registers dsh-mermaid with ModuleLoader', async () => {
+test('browser bundle registers dsh-mermaid and its real runtime respects the documented DOM boundary', async (t) => {
   const build = spawnSync(process.execPath, ['scripts/build.mjs'], {
     cwd: process.cwd(),
     encoding: 'utf8',
@@ -34,4 +35,22 @@ test('browser bundle registers dsh-mermaid with ModuleLoader', async () => {
   vm.runInNewContext(bundle, context, { filename: 'lib/client.js' });
   assert.equal(registration?.id, 'dsh-mermaid');
   assert.equal(typeof registration?.factory, 'function');
+
+  // Build once, then import this exact artifact in fresh processes so DOMPurify's
+  // initialization and the ESM cache cannot leak between environment scenarios.
+  for (const scenario of ['with-dom', 'without-dom', 'dom-after-import']) {
+    await t.test(`real Mermaid runtime: ${scenario}`, () => {
+      const probe = spawnSync(process.execPath, [
+        fileURLToPath(new URL('../test-support/runtime-probe.mjs', import.meta.url)),
+        scenario,
+        new URL('../lib/mermaid-runtime.js', import.meta.url).href,
+      ], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        timeout: 30_000,
+      });
+      assert.equal(probe.error, undefined, probe.error?.message);
+      assert.equal(probe.status, 0, probe.stderr || probe.stdout);
+    });
+  }
 });

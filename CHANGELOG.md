@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+- Document browser-runtime requirements, internal package boundaries, and server-side parsing limitations in English and Simplified Chinese.
+- Add real bundled-runtime parser coverage for labeled diagrams, invalid syntax, missing DOM, and module initialization caching in isolated processes.
+
 ## [0.4.2] - 2026-10-15
 
 - Keep fullscreen viewer controls below the DSH Desktop titlebar on Windows.

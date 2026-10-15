@@ -29,6 +29,20 @@ Render Mermaid fenced code blocks in DeepSeek Harness Web as SVG diagrams with a
 
 Last verified with `@deepseek-ai/dsh 0.1.2-rc.1` on 2026-09-05 using Node.js 22.23.2. DSH is currently a developer preview and may introduce compatibility-breaking changes; please open an issue if a newer DSH release changes its plugin loader or Markdown DOM.
 
+### Runtime and integration boundary
+
+The Mermaid runtime runs in the DSH Web browser or Desktop renderer, where `window` and `document` are available. The Node.js host serves the bundled file over HTTP. The Node.js version requirement covers installation, builds, and the plugin host; this package does not currently provide a supported Node.js validation API.
+
+`lib/mermaid-runtime.js` is an internal browser bundle. It is shipped for the plugin's same-origin runtime route and is not a public package export. Resolving `dsh-mermaid/package.json` and constructing a path to this file depends on internal packaging details that may change.
+
+Integrators experimenting with server-side parsing must account for these requirements:
+
+- Some diagram parsers sanitize labels through DOMPurify during `parse()`. Without a DOM, valid labeled flowcharts and state diagrams can throw `addHook is not a function` or `sanitize is not a function`. Successful parsing of one sequence diagram does not establish compatibility for other inputs.
+- Provide a compatible DOM **before the first runtime import**, preferably in a dedicated worker or process. DOMPurify captures its environment during initialization; adding a DOM after import does not repair the cached module. Temporarily assigning globals around an asynchronous import can also expose them to other host code. Follow [DOMPurify's server-side guidance](https://github.com/cure53/DOMPurify#running-dompurify-on-the-server) when choosing a DOM implementation.
+- On Windows, convert an absolute filesystem path with `pathToFileURL(runtimePath).href` before passing it to dynamic `import()`.
+- Distinguish invalid input from unavailable dependencies, environment failures, and timeouts. Mermaid's `.hash` error field is not a universal classifier: invalid pie syntax and unknown diagram types can also fail without it. An incomplete validation must not be reported as successful.
+- Use the same Mermaid version and relevant configuration as the renderer. A successful `parse()` checks syntax; it does not guarantee successful layout or SVG rendering. Keep the renderer's error handling and source fallback.
+
 ## Install
 
 If `dsh` is available globally, install the stable npm release with:
@@ -96,6 +110,8 @@ dsh plugin --profile web add -w .
 ```
 
 Build output is written to `lib/`. The lightweight `client.js` bootstrap is registered with the DSH client module loader as `dsh-mermaid`, while the bundled Mermaid runtime is served from the plugin's same-origin host route and loaded on demand. DSH resolves the relative installation path against the current plugin checkout.
+
+`npm.cmd run check` builds the runtime and tests its real parser in separate processes, with and without a DOM, alongside the client tests. The DOM-backed parser tests use happy-dom as a test fixture and do not verify browser layout or SVG rendering, or recommend a production server-side DOM implementation.
 
 For manual local development, the built package can also be copied to:
 
