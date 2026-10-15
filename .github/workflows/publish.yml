@@ -6,10 +6,10 @@ on:
       tag:
         description: Existing Git tag to publish
         required: true
-        default: v0.4.1
+        default: v0.4.2
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -41,5 +41,31 @@ jobs:
       - name: Run checks
         run: npm run check
 
+      - name: Check npm version
+        id: npm_version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if npm view "dsh-mermaid@$version" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish package
+        if: steps.npm_version.outputs.exists != 'true'
         run: npm publish --access public
+
+      - name: Build GitHub release archive
+        run: npm pack --ignore-scripts
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          archive="dsh-mermaid-$(node -p "require('./package.json').version").tgz"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$archive" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$archive" --verify-tag --title "$RELEASE_TAG" --generate-notes
+          fi

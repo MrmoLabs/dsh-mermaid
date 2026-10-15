@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-15
+
+- Keep fullscreen viewer controls below the DSH Desktop titlebar on Windows.
 - Localize the GitHub-source installer CLI in English and Simplified Chinese, with an explicit language override and profile-specific restart guidance for DSH Desktop.
 - Show a localized missing-DSH error on Windows and use the system language when environment locale values are neutral.
 
