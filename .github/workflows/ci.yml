@@ -27,8 +27,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=high
+      - name: Audit bundled and test dependencies
+        run: npm audit --audit-level=high --registry=https://registry.npmjs.org
 
       - name: Run checks
         run: npm run check

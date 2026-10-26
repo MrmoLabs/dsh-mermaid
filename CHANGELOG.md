@@ -2,8 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [0.4.3] - 2026-10-26
 
+- Prevent Mermaid's hidden tooltip from adding page-level overflow; preserve shared tooltip bindings, scroll coordinates, custom transforms, and cleanup across plugin instances.
+- Cancel pending first mounts when the plugin is unloaded, including immediate disable/re-enable cycles.
+- Refresh sanitizer and test DOM dependencies and audit bundled development dependencies in CI and publishing checks.
 - Document browser-runtime requirements, internal package boundaries, and server-side parsing limitations in English and Simplified Chinese.
 - Add real bundled-runtime parser coverage for labeled diagrams, invalid syntax, missing DOM, and module initialization caching in isolated processes.
 

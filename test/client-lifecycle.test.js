@@ -2,6 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createClientHarness } from '../test-support/client-harness.js';
 
+test('disposal before the first mount cancels pending cards and rendering', async () => {
+  const harness = await createClientHarness();
+  try {
+    harness.disposePlugin();
+    await harness.wait(1100);
+    assert.equal(harness.document.querySelector('.dsh-mmd'), null);
+    assert.equal(harness.state.renderCalls.length, 0);
+    assert.equal(harness.document.getElementById('dsh-mermaid/css'), null);
+  } finally { await harness.cleanup(); }
+});
+
+test('immediate re-enabling enhances the same code block exactly once', async () => {
+  const harness = await createClientHarness();
+  try {
+    harness.disposePlugin();
+    harness.mountPlugin();
+    await harness.wait(1100);
+    assert.equal(harness.document.querySelectorAll('.dsh-mmd').length, 1);
+    assert.equal(harness.document.querySelector('.dsh-mmd').dataset.state, 'ok');
+    assert.equal(harness.state.renderCalls.length, 1);
+  } finally { await harness.cleanup(); }
+});
+
 test('discovers streamed blocks, remounts removed cards, and cleans up', async () => {
   const harness = await createClientHarness({ initialSource: '' });
   const { code, disposePlugin, document, pre, wait } = harness;

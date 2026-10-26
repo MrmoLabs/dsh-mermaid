@@ -25,18 +25,23 @@ let styleTag = null;
 let mermaidRuntime = null;
 let runtimePromise = null;
 let renderQueueActive = false;
+let tooltipPositioner = null;
+let tooltipPositionerFactory = null;
 const entries = new WeakMap();
 const wrappers = new Set();
 const renderQueue = [];
 
-function setMermaidRuntimeForTesting(runtime) {
+function setMermaidRuntimeForTesting(runtime, positionerFactory) {
   const previous = mermaidRuntime;
   const previousPromise = runtimePromise;
+  const previousPositionerFactory = tooltipPositionerFactory;
   mermaidRuntime = runtime;
   runtimePromise = Promise.resolve(runtime);
+  tooltipPositionerFactory = positionerFactory;
   return () => {
     mermaidRuntime = previous;
     runtimePromise = previousPromise;
+    tooltipPositionerFactory = previousPositionerFactory;
   };
 }
 
@@ -46,6 +51,7 @@ function loadMermaidRuntime() {
     runtimePromise = import(RUNTIME_URL)
       .then((module) => {
         mermaidRuntime = module.default;
+        tooltipPositionerFactory = module.createTooltipPositioner;
         return mermaidRuntime;
       })
       .catch((error) => {
@@ -244,7 +250,7 @@ function createEntry(code) {
     btnFullscreen, btnDownloadSvg, actionSlot,
     lastRendered: '', stableTimer: null, renderTimer: null, renderGeneration: 0, viewAdjustment: 0,
     messageKey: 'rendering', messageParameters: {},
-    statusKey: null, statusParameters: {},
+    statusKey: null, statusParameters: {}, tooltipPositioner,
   };
   entries.set(code, entry);
   localizeEntry(entry);
@@ -254,16 +260,17 @@ function createEntry(code) {
   btnFullscreen.addEventListener('click', () => fullscreenViewer.open(entry));
   btnDownloadSvg.addEventListener('click', () => downloadSvg(entry));
 
+  // Track pending cards too, so disposal also cancels their first-mount timer.
+  wrapper._dshCode = code;
+  wrappers.add(wrapper);
   entry.stableTimer = setTimeout(() => {
     entry.stableTimer = null;
     const pre = code.closest('pre');
     if (!code.isConnected || !pre?.parentNode) {
-      entries.delete(code);
+      disposeEntry(entry);
       return;
     }
     pre.parentNode.insertBefore(wrapper, pre);
-    wrapper._dshCode = code;
-    wrappers.add(wrapper);
     scheduleRender(entry);
   }, STABLE_MS);
 }
@@ -319,7 +326,17 @@ async function renderDiagram(entry) {
     entry.pane.innerHTML = svg;
     const svgElement = entry.pane.querySelector('svg');
     ensureSvgAccessibility(svgElement, t('diagramTitle', { type: entry.badge.textContent || 'mermaid' }));
-    if (svgElement && bindFunctions) bindFunctions(svgElement);
+    if (svgElement && bindFunctions) {
+      try {
+        bindFunctions(svgElement);
+      } finally {
+        const positions = entry.tooltipPositioner;
+        if (positions && !positions.disposed) {
+          positions.instance ||= tooltipPositionerFactory?.(document);
+          positions.instance?.trackCurrent();
+        }
+      }
+    }
     entry.lastRendered = source;
     entry.messageKey = null;
     entry.messageParameters = null;
@@ -400,8 +417,8 @@ function disposeEntry(entry) {
 function collectGarbage() {
   for (const wrapper of wrappers) {
     const code = wrapper._dshCode;
-    if (!wrapper.isConnected || !code?.isConnected) {
-      const entry = code ? entries.get(code) : null;
+    const entry = code ? entries.get(code) : null;
+    if ((!wrapper.isConnected && !entry?.stableTimer) || !code?.isConnected) {
       if (entry) {
         disposeEntry(entry);
         if (code.isConnected) maybeEnhance(code);
@@ -451,6 +468,8 @@ function apply(ctx) {
     if (typeof document === 'undefined' || !document.body) return undefined;
     currentLocale = detectLocale();
     injectCss();
+    const positions = { disposed: false, instance: null };
+    tooltipPositioner = positions;
 
     const observer = new MutationObserver(handleMutations);
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
@@ -487,6 +506,9 @@ function apply(ctx) {
         else wrapper.remove();
       }
       fullscreenViewer.destroy();
+      positions.disposed = true;
+      positions.instance?.dispose();
+      if (tooltipPositioner === positions) tooltipPositioner = null;
       removeCss();
     };
   });

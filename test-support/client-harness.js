@@ -1,8 +1,9 @@
 import { Window } from 'happy-dom';
+import { createTooltipPositioner } from '../src/tooltip.js';
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', locale = 'zh-CN' } = {}) {
+async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', locale = 'zh-CN', bindFunctions } = {}) {
   const window = new Window({ url: 'http://localhost/' });
   const previousGlobals = new Map();
   const browserGlobals = {
@@ -61,18 +62,19 @@ async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', loca
         if (source.endsWith('-->')) throw new Error('synthetic Mermaid failure');
         if (source.includes('SLOW')) {
           return await new Promise((resolve) => {
-            state.releaseSlowRender = () => resolve({ svg: '<svg data-render="slow"></svg>' });
+            state.releaseSlowRender = () => resolve({ svg: '<svg data-render="slow"></svg>', bindFunctions });
           });
         }
         const renderName = source.includes('FAST') ? 'fast' : 'normal';
         return {
           svg: `<svg id="diagram" data-render="${renderName}" data-source-length="${source.length}"><defs><marker id="arrow"><path></path></marker></defs><path class="node" marker-end="url(#arrow)"></path></svg>`,
+          bindFunctions,
         };
       } finally {
         activeRenders -= 1;
       }
     },
-  });
+  }, createTooltipPositioner);
 
   function addCodeBlock(source = '', className = 'language-mermaid') {
     const pre = document.createElement('pre');
@@ -86,11 +88,14 @@ async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', loca
 
   const initialBlock = initialSource === null ? null : addCodeBlock(initialSource);
   let dispose;
-  client.apply({
-    effect(callback) {
-      dispose = callback();
-    },
-  });
+  function mountPlugin() {
+    client.apply({
+      effect(callback) {
+        dispose = callback();
+      },
+    });
+  }
+  mountPlugin();
 
   let cleaned = false;
   function disposePlugin() {
@@ -116,6 +121,7 @@ async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', loca
     code: initialBlock?.code,
     document,
     disposePlugin,
+    mountPlugin,
     pre: initialBlock?.pre,
     state,
     wait,

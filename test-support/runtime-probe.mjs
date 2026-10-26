@@ -22,7 +22,8 @@ function isMissingDomError(error) {
 if (scenario === 'with-dom') {
   const window = await installTestDom();
   try {
-    const { default: runtime } = await import(runtimeUrl);
+    const { default: runtime, createTooltipPositioner } = await import(runtimeUrl);
+    assert.equal(typeof createTooltipPositioner, 'function');
     runtime.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true });
 
     for (const source of [
