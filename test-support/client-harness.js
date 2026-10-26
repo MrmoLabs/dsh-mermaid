@@ -1,5 +1,6 @@
 import { Window } from 'happy-dom';
 import { createTooltipPositioner } from '../src/tooltip.js';
+import { preserveViewPosition } from '../src/scroll.js';
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -74,7 +75,7 @@ async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', loca
         activeRenders -= 1;
       }
     },
-  }, createTooltipPositioner);
+  }, createTooltipPositioner, preserveViewPosition);
 
   function addCodeBlock(source = '', className = 'language-mermaid') {
     const pre = document.createElement('pre');

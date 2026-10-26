@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## [0.4.3] - 2026-10-26
 
+- Reconcile DSH's existing return-to-bottom action when switching to a shorter Mermaid view reaches the physical bottom, clearing the stale button and saved reading position without moving readers who still have content below.
+- Keep view-position handling in the lazy runtime so the client bootstrap stays below its existing size budget.
+- Keep the visually hidden live status inside its diagram card so tall diagrams and code view cannot add page-level overflow while scrolling a conversation.
 - Prevent Mermaid's hidden tooltip from adding page-level overflow; preserve shared tooltip bindings, scroll coordinates, custom transforms, and cleanup across plugin instances.
 - Cancel pending first mounts when the plugin is unloaded, including immediate disable/re-enable cycles.
 - Refresh sanitizer and test DOM dependencies and audit bundled development dependencies in CI and publishing checks.

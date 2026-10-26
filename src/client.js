@@ -27,21 +27,25 @@ let runtimePromise = null;
 let renderQueueActive = false;
 let tooltipPositioner = null;
 let tooltipPositionerFactory = null;
+let preserveViewPosition = null;
 const entries = new WeakMap();
 const wrappers = new Set();
 const renderQueue = [];
 
-function setMermaidRuntimeForTesting(runtime, positionerFactory) {
+function setMermaidRuntimeForTesting(runtime, positionerFactory, viewPositioner) {
   const previous = mermaidRuntime;
   const previousPromise = runtimePromise;
   const previousPositionerFactory = tooltipPositionerFactory;
+  const previousViewPositioner = preserveViewPosition;
   mermaidRuntime = runtime;
   runtimePromise = Promise.resolve(runtime);
   tooltipPositionerFactory = positionerFactory;
+  preserveViewPosition = viewPositioner;
   return () => {
     mermaidRuntime = previous;
     runtimePromise = previousPromise;
     tooltipPositionerFactory = previousPositionerFactory;
+    preserveViewPosition = previousViewPositioner;
   };
 }
 
@@ -52,6 +56,7 @@ function loadMermaidRuntime() {
       .then((module) => {
         mermaidRuntime = module.default;
         tooltipPositionerFactory = module.createTooltipPositioner;
+        preserveViewPosition = module.preserveViewPosition;
         return mermaidRuntime;
       })
       .catch((error) => {
@@ -143,30 +148,9 @@ function setView(entry, view) {
   entry.btnCode.setAttribute('aria-pressed', String(view === 'code'));
 }
 
-function findScrollContainer(element) {
-  for (let parent = element.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
-    const { overflowY } = window.getComputedStyle(parent);
-    if (/^(auto|scroll|overlay)$/.test(overflowY) && parent.scrollHeight > parent.clientHeight) {
-      return parent;
-    }
-  }
-  return document.scrollingElement || document.documentElement;
-}
-
 function setViewFromControl(entry, view) {
   if (entry.wrapper.dataset.view === view) return;
-  const toolbarTop = entry.bar.getBoundingClientRect().top;
-  const scrollContainer = findScrollContainer(entry.wrapper);
-  const adjustment = ++entry.viewAdjustment;
-  setView(entry, view);
-  window.requestAnimationFrame(() => {
-    if (adjustment !== entry.viewAdjustment || !entry.wrapper.isConnected) return;
-    const offset = entry.bar.getBoundingClientRect().top - toolbarTop;
-    if (Math.abs(offset) < 0.5) return;
-    const documentScroller = document.scrollingElement || document.documentElement;
-    if (scrollContainer === documentScroller) window.scrollBy(0, offset);
-    else scrollContainer.scrollTop += offset;
-  });
+  preserveViewPosition(entry, () => setView(entry, view));
 }
 
 function setViewControlsAvailable(entry, available) {

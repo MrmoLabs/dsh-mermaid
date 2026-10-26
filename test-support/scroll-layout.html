@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>Mermaid conversation scroll regression</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px sans-serif; }
+  #app { height: 100vh; display: flex; flex-direction: column; }
+  header, footer { height: 70px; flex: none; padding: 20px; background: #eee; }
+  main { flex: 1; min-height: 0; overflow-y: auto; padding: 20px; }
+  article { max-width: 900px; margin: auto; }
+  .history { height: 850px; }
+</style>
+<div id="app">
+  <header>Mermaid conversation scroll regression</header>
+  <main><article><div class="history">Earlier messages</div><pre><code class="language-mermaid">flowchart TD
+    A[用户下单] --> B{库存充足?}
+    B -- 是 --> C[创建订单]
+    B -- 否 --> D[提示缺货]
+    C --> E[发起支付]
+    E --> F{支付成功?}
+    F -- 是 --> G[商家发货]
+    F -- 否 --> H[取消订单]
+    G --> I[用户确认收货]
+    I --> J[订单完成]</code></pre></article></main>
+  <footer>Composer</footer>
+</div>
+<script type="module">
+  // After npm run build, serve the repository over HTTP and open this page in a
+  // real browser. Happy DOM does not calculate overflow or scroll geometry.
+  import runtime, { createTooltipPositioner, preserveViewPosition } from '../lib/mermaid-runtime.js';
+  import { apply, setMermaidRuntimeForTesting } from '../src/client.js';
+
+  const report = window.__scrollLayoutReport = { checks: [], complete: false };
+  const pause = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const scroller = document.querySelector('main');
+  let dispose;
+  const restoreRuntime = setMermaidRuntimeForTesting(runtime, createTooltipPositioner, preserveViewPosition);
+  const mount = () => apply({ effect(callback) { dispose = callback(); } });
+  const check = (label, condition, detail) => {
+    report.checks.push({ label, pass: Boolean(condition), detail });
+    if (!condition) throw new Error(`${label}: ${JSON.stringify(detail)}`);
+  };
+  const measure = label => {
+    const root = document.documentElement;
+    const overflow = { x: root.scrollWidth - root.clientWidth, y: root.scrollHeight - root.clientHeight };
+    check(label, overflow.x === 0 && overflow.y === 0, overflow);
+  };
+  const waitRendered = async () => {
+    const deadline = performance.now() + 15000;
+    while (!document.querySelector('.dsh-mmd[data-state="ok"]')) {
+      if (performance.now() > deadline) throw new Error('Render timed out');
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    await pause();
+  };
+
+  try {
+    measure('before rendering');
+    mount();
+    await waitRendered();
+    const card = document.querySelector('.dsh-mmd');
+    const controls = [...card.querySelectorAll('button')];
+    const status = card.querySelector('[role="status"]');
+    check('live announcement retained', status.getAttribute('aria-live') === 'polite' && status.textContent.length > 0, status.textContent);
+    check('conversation remains scrollable', scroller.scrollHeight > scroller.clientHeight, scroller.scrollHeight);
+    for (const fraction of [1, 0.75, 0.5, 0.25, 0]) {
+      scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) * fraction;
+      await pause();
+      measure(`diagram scroll ${fraction}`);
+    }
+    scroller.scrollTop += card.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 50;
+    await pause();
+    measure('diagram toolbar near top');
+    const toolbarTop = card.querySelector('.dsh-mmd-bar').getBoundingClientRect().top;
+    controls[0].click();
+    await pause();
+    measure('switch to code');
+    const codeShift = card.querySelector('.dsh-mmd-bar').getBoundingClientRect().top - toolbarTop;
+    // A shorter view can clamp scrollTop; preserving a position beyond the new
+    // maximum is impossible. It must never redirect the scroll to the document.
+    check('root scroll unchanged', window.scrollY === 0, { codeShift, scrollY });
+    for (const fraction of [0, 0.5, 1]) {
+      scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) * fraction;
+      await pause();
+      measure(`code scroll ${fraction}`);
+    }
+    controls[1].click();
+    await pause();
+    measure('back to diagram');
+    controls[2].focus();
+    controls[2].click();
+    await pause();
+    check('fullscreen opened', !document.querySelector('.dsh-mmd-viewer').hidden);
+    measure('fullscreen');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await pause();
+    measure('after fullscreen');
+    check('focus restored', document.activeElement === controls[2]);
+    // Also verify a host that scrolls the document rather than a nested pane.
+    scroller.scrollTop = 0;
+    document.querySelector('#app').style.height = 'auto';
+    scroller.style.cssText += ';overflow:visible;flex:none';
+    await pause();
+    const measureDocument = label => {
+      const bottom = document.querySelector('#app').getBoundingClientRect().bottom + scrollY;
+      check(label, document.documentElement.scrollHeight <= Math.ceil(bottom), { pageHeight: document.documentElement.scrollHeight, contentBottom: bottom });
+    };
+    window.scrollTo(0, card.getBoundingClientRect().top + scrollY - 50);
+    await pause();
+    measureDocument('document scroll near toolbar');
+    controls[0].click();
+    await pause();
+    measureDocument('document code view');
+    controls[1].click();
+    await pause();
+    measureDocument('document diagram view');
+    document.querySelector('#app').style.removeProperty('height');
+    scroller.style.cssText = '';
+    window.scrollTo(0, 0);
+    dispose();
+    document.querySelector('article').replaceChildren(document.createTextNode('Empty conversation'));
+    await pause();
+    measure('unloaded and empty conversation');
+    check('tooltip remains shared and safely positioned', document.querySelector('.mermaidTooltip')?.isConnected);
+  } catch (error) {
+    report.error = String(error.stack || error);
+  } finally {
+    dispose?.();
+    restoreRuntime();
+    report.complete = true;
+    report.pass = !report.error && report.checks.every(check => check.pass);
+    document.title = `Scroll regression: ${report.pass ? 'PASS' : 'FAIL'}`;
+  }
+</script>
+</html>
