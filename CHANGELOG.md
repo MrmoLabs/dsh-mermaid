@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.4] - 2026-10-27
+
+- Allow Code/Diagram switching before the lazy Mermaid runtime has loaded.
+- Remove stale diagram cards and fullscreen content when streamed source is cleared, including while a render is still pending; enhance the block again when content resumes.
+- Close fullscreen on render errors or source limits and focus the current code; ignore failures from superseded renders.
+- Include the tooltip overflow and conversation scrolling fixes prepared in 0.4.3 in the npm release.
+
 ## [0.4.3] - 2026-10-26
 
 - Reconcile DSH's existing return-to-bottom action when switching to a shorter Mermaid view reaches the physical bottom, clearing the stale button and saved reading position without moving readers who still have content below.

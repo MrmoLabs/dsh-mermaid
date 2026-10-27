@@ -6,7 +6,7 @@ on:
       tag:
         description: Existing Git tag to publish
         required: true
-        default: v0.4.3
+        default: v0.4.4
 
 permissions:
   contents: write
