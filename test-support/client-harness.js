@@ -4,7 +4,7 @@ import { preserveViewPosition } from '../src/scroll.js';
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', locale = 'zh-CN', bindFunctions } = {}) {
+async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', locale = 'zh-CN', bindFunctions, injectRuntime = true } = {}) {
   const window = new Window({ url: 'http://localhost/' });
   const previousGlobals = new Map();
   const browserGlobals = {
@@ -34,6 +34,7 @@ async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', loca
     maxActiveRenders: 0,
     objectUrls: [],
     releaseSlowRender: null,
+    rejectSlowRender: null,
     renderCalls: [],
     revokedUrls: [],
   };
@@ -50,7 +51,7 @@ async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', loca
   moduleUrl.searchParams.set('dom-test', `${Date.now()}-${Math.random()}`);
   const client = await import(moduleUrl.href);
   let activeRenders = 0;
-  const restoreMermaidRuntime = client.setMermaidRuntimeForTesting({
+  const restoreMermaidRuntime = injectRuntime ? client.setMermaidRuntimeForTesting({
     initialize(options) {
       state.initializedThemes.push(options.theme);
       state.initializedOptions.push(options);
@@ -62,8 +63,9 @@ async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', loca
       try {
         if (source.endsWith('-->')) throw new Error('synthetic Mermaid failure');
         if (source.includes('SLOW')) {
-          return await new Promise((resolve) => {
+          return await new Promise((resolve, reject) => {
             state.releaseSlowRender = () => resolve({ svg: '<svg data-render="slow"></svg>', bindFunctions });
+            state.rejectSlowRender = () => reject(new Error('synthetic delayed Mermaid failure'));
           });
         }
         const renderName = source.includes('FAST') ? 'fast' : 'normal';
@@ -75,7 +77,7 @@ async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', loca
         activeRenders -= 1;
       }
     },
-  }, createTooltipPositioner, preserveViewPosition);
+  }, createTooltipPositioner, preserveViewPosition) : null;
 
   function addCodeBlock(source = '', className = 'language-mermaid') {
     const pre = document.createElement('pre');

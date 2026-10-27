@@ -150,7 +150,8 @@ function setView(entry, view) {
 
 function setViewFromControl(entry, view) {
   if (entry.wrapper.dataset.view === view) return;
-  preserveViewPosition(entry, () => setView(entry, view));
+  if (preserveViewPosition) preserveViewPosition(entry, () => setView(entry, view));
+  else setView(entry, view);
 }
 
 function setViewControlsAvailable(entry, available) {
@@ -162,6 +163,23 @@ function setEntryStatus(entry, key, parameters = {}) {
   entry.statusKey = key;
   entry.statusParameters = parameters;
   entry.statusEl.textContent = t(key, parameters);
+}
+
+function setEntryError(entry, key, parameters, statusKey = key) {
+  const message = t(key, parameters);
+  entry.wrapper.dataset.state = 'error';
+  setViewControlsAvailable(entry, false);
+  entry.pane.dataset.state = 'error';
+  entry.messageKey = key;
+  entry.messageParameters = parameters;
+  entry.pane.textContent = message;
+  entry.errorEl.textContent = message;
+  setEntryStatus(entry, statusKey, parameters);
+  setView(entry, 'code');
+  if (fullscreenViewer.isOpenFor(entry)) {
+    fullscreenViewer.close();
+    entry.codePane.focus({ preventScroll: true });
+  }
 }
 
 function downloadSvg(entry) {
@@ -216,6 +234,7 @@ function createEntry(code) {
   pane.dataset.state = 'loading';
   const codePane = document.createElement('pre');
   codePane.className = 'dsh-mmd-code';
+  codePane.tabIndex = -1;
   codePane.textContent = code.textContent || '';
   const errorEl = document.createElement('div');
   errorEl.className = 'dsh-mmd-error';
@@ -261,7 +280,10 @@ function createEntry(code) {
 
 async function renderDiagram(entry) {
   const source = (entry.code.textContent || '').trim();
-  if (!source) return;
+  if (!source) {
+    disposeEntry(entry);
+    return;
+  }
   if (source === entry.lastRendered && entry.pane.dataset.state === 'ok') return;
 
   const generation = ++entry.renderGeneration;
@@ -285,16 +307,7 @@ async function renderDiagram(entry) {
     }
   }
   if (limitMessage) {
-    const message = t(limitMessage.key, limitMessage.parameters);
-    entry.wrapper.dataset.state = 'error';
-    setViewControlsAvailable(entry, false);
-    entry.pane.dataset.state = 'error';
-    entry.messageKey = limitMessage.key;
-    entry.messageParameters = limitMessage.parameters;
-    entry.pane.textContent = message;
-    entry.errorEl.textContent = message;
-    setEntryStatus(entry, limitMessage.key, limitMessage.parameters);
-    setView(entry, 'code');
+    setEntryError(entry, limitMessage.key, limitMessage.parameters);
     return;
   }
 
@@ -331,22 +344,20 @@ async function renderDiagram(entry) {
     if (fullscreenViewer.isOpenFor(entry)) fullscreenViewer.update(entry, false);
   } catch (error) {
     if (generation !== entry.renderGeneration || !entry.wrapper.isConnected) return;
+    if ((entry.code.textContent || '').trim() !== source) return;
     const parameters = { detail: error?.message || String(error) };
-    const message = t('renderFailed', parameters);
-    entry.wrapper.dataset.state = 'error';
-    setViewControlsAvailable(entry, false);
-    entry.pane.dataset.state = 'error';
-    entry.messageKey = 'renderFailed';
-    entry.messageParameters = parameters;
-    entry.pane.textContent = message;
-    entry.errorEl.textContent = message;
-    setEntryStatus(entry, 'renderFailedStatus');
-    setView(entry, 'code');
+    setEntryError(entry, 'renderFailed', parameters, 'renderFailedStatus');
   }
 }
 
 function scheduleRender(entry) {
   if (entry.renderTimer) clearTimeout(entry.renderTimer);
+  entry.renderTimer = null;
+  // Clearing must invalidate in-flight work even while the render queue is busy.
+  if (!(entry.code.textContent || '').trim()) {
+    disposeEntry(entry);
+    return;
+  }
   entry.renderTimer = setTimeout(() => {
     entry.renderTimer = null;
     enqueueRender(entry);
