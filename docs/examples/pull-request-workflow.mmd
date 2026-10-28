@@ -1,0 +1,6 @@
+flowchart LR
+  A[Open pull request] --> B{Checks pass?}
+  B -- No --> C[Fix issues]
+  C --> A
+  B -- Yes --> D[Code review]
+  D --> E[Merge and release]
