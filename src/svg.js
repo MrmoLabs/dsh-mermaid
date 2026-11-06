@@ -2,9 +2,8 @@ let accessibleTitleUid = 0;
 let viewerCloneUid = 0;
 
 function serializeSvg(svg) {
-  const clone = svg.cloneNode(true);
-  if (!clone.hasAttribute('xmlns')) clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n${clone.outerHTML}`;
+  const xml = new window.XMLSerializer().serializeToString(svg);
+  return `<?xml version="1.0" encoding="UTF-8"?>\n${xml}`;
 }
 
 function ensureSvgAccessibility(svg, titleText) {

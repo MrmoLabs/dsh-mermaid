@@ -58,11 +58,23 @@ test('supports accessible fullscreen viewing and direct SVG download', async () 
     assert.equal(card.inert, false);
     assert.equal(document.activeElement, buttons[2]);
 
+    const foreignObject = document.createElementNS(originalSvg.namespaceURI, 'foreignObject');
+    const label = document.createElement('p');
+    label.append('First line', document.createElement('br'), 'Second line');
+    foreignObject.append(label);
+    originalSvg.append(foreignObject);
+
     buttons[3].click();
     assert.equal(card.querySelector('.dsh-mmd-menu'), null);
     assert.equal(state.downloadedName, 'mermaid-flowchart.svg');
     assert.equal(card.querySelector('[role="status"]')?.textContent, 'SVG 已下载。');
     assert.equal(state.objectUrls[0].type, 'image/svg+xml;charset=utf-8');
+    const xml = await state.objectUrls[0].text();
+    assert.match(xml, /First line<br\s*\/>Second line/);
+    const exported = new window.DOMParser().parseFromString(xml, 'image/svg+xml');
+    assert.equal(exported.querySelector('parsererror'), null);
+    assert.equal(exported.documentElement.namespaceURI, originalSvg.namespaceURI);
+    assert.equal(exported.querySelector('foreignObject br')?.namespaceURI, label.namespaceURI);
     await wait(10);
     assert.deepEqual(state.revokedUrls, ['blob:test-1']);
   } finally {

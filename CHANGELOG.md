@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- Export standalone SVG as XML, including HTML labels with line breaks.
+
 ## [0.4.4] - 2026-10-27
 
 - Allow Code/Diagram switching before the lazy Mermaid runtime has loaded.
