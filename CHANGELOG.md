@@ -4,6 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Keep viewer controls below Electron's native title bar overlay and outside window drag regions.
 - Export standalone SVG as XML, including HTML labels with line breaks.
 - Retry flowcharts with simple unquoted parentheses in edge or node labels while keeping the original source in Code view.
 

@@ -22,8 +22,9 @@ const CSS = `
 .dsh-mmd[data-view='code'][data-state='error'] .dsh-mmd-error{display:block}
 .dsh-mmd[data-state='error'] .dsh-mmd-view-control{display:none}
 .dsh-mmd:not([data-state='ok']) .dsh-mmd-diagram-action{display:none}
-.dsh-mmd-viewer{position:fixed;z-index:2147483000;inset:0;display:flex;flex-direction:column;background:#fff;color:var(--dsw-alias-label-primary,#222)}
-html[data-windows-titlebar]:not([data-fullscreen]) .dsh-mmd-viewer{padding-top:var(--dsh-windows-titlebar-height,40px)}
+/* Keep native titlebar clearance even when Desktop's fullscreen marker is stale. */
+.dsh-mmd-viewer{position:fixed;z-index:2147483000;inset:0;top:max(var(--dsh-mmd-titlebar-height,0px),calc(env(titlebar-area-y,0px) + env(titlebar-area-height,0px)));-webkit-app-region:no-drag;display:flex;flex-direction:column;background:#fff;color:var(--dsw-alias-label-primary,#222)}
+html[data-windows-titlebar]:not([data-fullscreen]) .dsh-mmd-viewer{--dsh-mmd-titlebar-height:var(--dsh-windows-titlebar-height,40px)}
 body[data-ds-dark-theme] .dsh-mmd-viewer{background:#121212;color:var(--dsw-alias-label-primary,#f5f5f5)}
 .dsh-mmd-viewer[hidden]{display:none}
 .dsh-mmd-viewer-bar{display:flex;align-items:center;gap:8px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.3));background:var(--dsw-alias-bg-layer-1,rgba(30,30,30,.98))}
