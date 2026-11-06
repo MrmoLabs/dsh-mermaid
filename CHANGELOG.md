@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## [0.4.5] - 2026-11-06
 
 - Keep viewer controls below Electron's native title bar overlay and outside window drag regions.
 - Export standalone SVG as XML, including HTML labels with line breaks.
