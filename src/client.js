@@ -54,7 +54,7 @@ function loadMermaidRuntime() {
   if (!runtimePromise) {
     runtimePromise = import(RUNTIME_URL)
       .then((module) => {
-        mermaidRuntime = module.default;
+        mermaidRuntime = { initialize: module.default.initialize, render: module.renderMermaid };
         tooltipPositionerFactory = module.createTooltipPositioner;
         preserveViewPosition = module.preserveViewPosition;
         return mermaidRuntime;

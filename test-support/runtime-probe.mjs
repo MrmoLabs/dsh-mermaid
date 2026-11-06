@@ -22,7 +22,7 @@ function isMissingDomError(error) {
 if (scenario === 'with-dom') {
   const window = await installTestDom();
   try {
-    const { default: runtime, createTooltipPositioner } = await import(runtimeUrl);
+    const { default: runtime, createTooltipPositioner, renderMermaid } = await import(runtimeUrl);
     assert.equal(typeof createTooltipPositioner, 'function');
     runtime.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true });
 
@@ -49,6 +49,65 @@ if (scenario === 'with-dom') {
       // Rejection is the contract: do not assume every parser exposes .hash.
       await assert.rejects(runtime.parse(source), `expected invalid input to be rejected: ${source}`);
     }
+
+    // Exercise the render adapter with the real parser and no layout dependency.
+    const renderCalls = [];
+    runtime.render = async (_id, source) => {
+      renderCalls.push(source);
+      return runtime.parse(source);
+    };
+    const original = [
+      'flowchart LR',
+      '  %% Keep this comment: A[Not a node(test)]',
+      '  A["Already quoted B[example(text)]"] -->|UsbPresence(true/false)| C',
+      '  C --> E[SwitchToUsb / SetFlag(false)]',
+      '  E --> F[(Cylinder)]',
+    ].join('\n');
+    const normalized = original
+      .replace('|UsbPresence(true/false)|', '|"UsbPresence(true/false)"|')
+      .replace('[SwitchToUsb / SetFlag(false)]', '["SwitchToUsb / SetFlag(false)"]');
+    assert.equal((await renderMermaid('issue9', original)).diagramType, 'flowchart-v2');
+    assert.deepEqual(renderCalls.splice(0), [original, normalized]);
+
+    await renderMermaid('valid', normalized);
+    assert.deepEqual(renderCalls.splice(0), [normalized]);
+
+    const issue9 = [
+      'flowchart LR',
+      '    subgraph 外壳[ProbeDrive 外壳: 事件映射 + 效果执行]',
+      '      W[UsbPresenceWatch<br/>2s 采样 · 仅非USB或回退窗挂起时]',
+      '      G[WiFi 守卫<br/>补偿入口 / 自动连接入口]',
+      '      A[仲裁泵 PostModeArbitration]',
+      '    end',
+      '    subgraph 内核[ModeArbitrationMachine: 纯判定]',
+      '      S[新增 _usbPresent 状态]',
+      '      R1[UsbPresence: 在场+非USB → 抢占切USB]',
+      '      R2[UsbLinkEstablished → 取消回退窗]',
+      '      R3[OnTick 到期: 在场 → 保持USB]',
+      '    end',
+      '    W -->|UsbPresence(true/false)| A --> S',
+      '    G -->|立即发布在场| A',
+      '    R1 --> E[SwitchToUsb / PauseWifiRecovery / CancelWifiInFlight / SetFlag(false)]',
+      '    R2 --> C[CancelFallbackWindow]',
+      '    R3 --> C',
+    ].join('\n');
+    const quotedIssue9 = issue9
+      .replace('|UsbPresence(true/false)|', '|"UsbPresence(true/false)"|')
+      .replace('[SwitchToUsb / PauseWifiRecovery / CancelWifiInFlight / SetFlag(false)]',
+        '["SwitchToUsb / PauseWifiRecovery / CancelWifiInFlight / SetFlag(false)"]');
+    for (const [prefix, newline] of [
+      ['%% Leading comment A[Keep(test)]\n\n', '\n'],
+      ['---\r\ntitle: A[Keep(test)]\r\nconfig:\r\n  look: handDrawn\r\n---\r\n%% Keep this too\r\n', '\r\n'],
+    ]) {
+      const source = prefix + issue9.replaceAll('\n', newline);
+      const quoted = prefix + quotedIssue9.replaceAll('\n', newline);
+      assert.equal((await renderMermaid('issue9-with-prefix', source)).diagramType, 'flowchart-v2');
+      assert.deepEqual(renderCalls.splice(0), [source, quoted]);
+    }
+
+    const invalid = `${original}\n  F -->`;
+    await assert.rejects(renderMermaid('invalid', invalid), (error) => error?.hash?.token === 'PS');
+    assert.deepEqual(renderCalls, [invalid, `${normalized}\n  F -->`]);
   } finally {
     delete globalThis.window;
     delete globalThis.document;

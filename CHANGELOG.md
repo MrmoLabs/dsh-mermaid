@@ -5,6 +5,7 @@ All notable changes to this project are documented in this file.
 ## Unreleased
 
 - Export standalone SVG as XML, including HTML labels with line breaks.
+- Retry flowcharts with simple unquoted parentheses in edge or node labels while keeping the original source in Code view.
 
 ## [0.4.4] - 2026-10-27
 
