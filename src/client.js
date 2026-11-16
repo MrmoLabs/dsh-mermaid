@@ -240,6 +240,18 @@ function setEntryStatus(entry, key, parameters = {}) {
   entry.statusEl.textContent = t(key, parameters);
 }
 
+function setEntryRendered(entry) {
+  entry.lastRenderState = 'ok';
+  entry.messageKey = null;
+  entry.messageParameters = null;
+  entry.wrapper.dataset.state = 'ok';
+  entry.pane.dataset.state = 'ok';
+  entry.errorEl.textContent = '';
+  setNotice(entry, null);
+  setEntryStatus(entry, 'rendered');
+  setActionAvailability(entry);
+}
+
 function setEntryLoading(entry) {
   const hasSvg = Boolean(entry.pane.querySelector('svg'));
   entry.wrapper.dataset.state = 'rendering';
@@ -489,18 +501,18 @@ function createEntry(code) {
     entry.draft = editor.value;
     entry.draftDirty = true;
     entry.codePane.textContent = entry.draft;
-    setActionAvailability(entry);
-    if (!entry.composing) scheduleRender(entry);
+    scheduleRender(entry);
   });
   editor.addEventListener('compositionstart', () => {
     entry.composing = true;
+    cancelScheduledRender(entry);
+    entry.renderGeneration += 1;
   });
   editor.addEventListener('compositionend', () => {
     entry.composing = false;
     entry.draft = editor.value;
     entry.draftDirty = true;
     entry.codePane.textContent = entry.draft;
-    setActionAvailability(entry);
     scheduleRender(entry);
   });
 
@@ -520,6 +532,8 @@ function createEntry(code) {
 }
 
 async function renderDiagram(entry) {
+  // A queued task can outlive its debounce or enter composition while waiting.
+  if (entry.composing || entry.renderTimer) return;
   if (!entry.draftDirty) syncDraftFromMessage(entry);
   const raw = currentRawSource(entry);
   const source = raw.trim();
@@ -533,13 +547,7 @@ async function renderDiagram(entry) {
     return;
   }
   if (source === entry.lastRendered && entry.lastRenderState === 'ok' && entry.pane.querySelector('svg')) {
-    entry.wrapper.dataset.state = 'ok';
-    entry.messageKey = null;
-    entry.messageParameters = null;
-    entry.errorEl.textContent = '';
-    entry.pane.dataset.state = 'ok';
-    setNotice(entry, null);
-    setActionAvailability(entry);
+    setEntryRendered(entry);
     return;
   }
 
@@ -571,30 +579,30 @@ async function renderDiagram(entry) {
     const { svg, bindFunctions } = await runtime.render(id, source);
     if (generation !== entry.renderGeneration || !entry.wrapper.isConnected) return;
     if (currentRawSource(entry).trim() !== source) return;
-    entry.pane.innerHTML = svg;
-    const svgElement = entry.pane.querySelector('svg');
-    ensureSvgAccessibility(svgElement, t('diagramTitle', { type: entry.badge.textContent || 'mermaid' }));
-    if (svgElement && bindFunctions) {
-      try {
-        bindFunctions(svgElement);
-      } finally {
-        const positions = entry.tooltipPositioner;
-        if (positions && !positions.disposed) {
-          positions.instance ||= tooltipPositionerFactory?.(document);
-          positions.instance?.trackCurrent();
+    // Binding requires the mounted SVG. Keep the original nodes for rollback
+    // so a binding failure cannot separate the preview from lastRendered.
+    const previousNodes = [...entry.pane.childNodes];
+    try {
+      entry.pane.innerHTML = svg;
+      const svgElement = entry.pane.querySelector('svg');
+      ensureSvgAccessibility(svgElement, t('diagramTitle', { type: entry.badge.textContent || 'mermaid' }));
+      if (svgElement && bindFunctions) {
+        try {
+          bindFunctions(svgElement);
+        } finally {
+          const positions = entry.tooltipPositioner;
+          if (positions && !positions.disposed) {
+            positions.instance ||= tooltipPositionerFactory?.(document);
+            positions.instance?.trackCurrent();
+          }
         }
       }
+    } catch (error) {
+      entry.pane.replaceChildren(...previousNodes);
+      throw error;
     }
     entry.lastRendered = source;
-    entry.lastRenderState = 'ok';
-    entry.messageKey = null;
-    entry.messageParameters = null;
-    entry.wrapper.dataset.state = 'ok';
-    entry.pane.dataset.state = 'ok';
-    entry.errorEl.textContent = '';
-    setNotice(entry, null);
-    setEntryStatus(entry, 'rendered');
-    setActionAvailability(entry);
+    setEntryRendered(entry);
     if (fullscreenViewer.isOpenFor(entry)) fullscreenViewer.update(entry, false);
   } catch (error) {
     if (generation !== entry.renderGeneration || !entry.wrapper.isConnected) return;
@@ -605,16 +613,25 @@ async function renderDiagram(entry) {
   }
 }
 
-function scheduleRender(entry) {
+function cancelScheduledRender(entry) {
   if (entry.renderTimer) clearTimeout(entry.renderTimer);
   entry.renderTimer = null;
-  if (!entry.draftDirty) {
+}
+
+function scheduleRender(entry) {
+  cancelScheduledRender(entry);
+  if (!entry.draftDirty && !entry.composing) {
     syncDraftFromMessage(entry);
     if (!(entry.code.textContent || '').trim()) {
       disposeEntry(entry);
       return;
     }
   }
+  // Reflect stale previews during the debounce and while other cards render.
+  if (entry.lastRenderState === 'ok' && isPreviewFresh(entry)) setEntryRendered(entry);
+  else if (!currentRawSource(entry).trim()) setEntryEmpty(entry);
+  else setEntryLoading(entry);
+  if (entry.composing) return;
   entry.renderTimer = setTimeout(() => {
     entry.renderTimer = null;
     enqueueRender(entry);

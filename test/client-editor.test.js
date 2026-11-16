@@ -49,7 +49,8 @@ test('edits in place, keeps the last diagram on errors, and keeps the editor usa
 
     const good = 'flowchart LR\nA-->C';
     setDraft(harness, card, good);
-    await waitFor(harness, () => card.querySelector('.dsh-mmd-pane svg')?.getAttribute('data-source-length') === String(good.length));
+    await waitFor(harness, () => card.dataset.state === 'ok'
+      && card.querySelector('.dsh-mmd-pane svg')?.getAttribute('data-source-length') === String(good.length));
     assert.equal(card.querySelector('.dsh-mmd-pane svg')?.getAttribute('data-source-length'), String(good.length));
     assert.equal(card.querySelector('.dsh-mmd-reset').disabled, false);
     assert.equal(card.dataset.view, 'edit');

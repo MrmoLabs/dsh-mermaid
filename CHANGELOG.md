@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 - Add a card-local Mermaid editor with a debounced live preview. The draft never writes back to the conversation; Copy and Download .mmd preserve the raw source, Reset restores the message source, and the last successful diagram is kept while the draft is invalid or rendering.
 - Keep an initially invalid block editable, preserve the draft across view changes and message updates, and disable fullscreen/SVG export while the preview is stale.
+- Pause pending and queued previews during IME composition, mark stale previews while waiting to render, and restore the rendered announcement when reusing a cached diagram. Roll back failed SVG bindings so Reset and export keep the last successful diagram.
 
 ## [0.4.5] - 2026-11-06
 
