@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+- Add a card-local Mermaid editor with a debounced live preview. The draft never writes back to the conversation; Copy and Download .mmd preserve the raw source, Reset restores the message source, and the last successful diagram is kept while the draft is invalid or rendering.
+- Keep an initially invalid block editable, preserve the draft across view changes and message updates, and disable fullscreen/SVG export while the preview is stale.
+
 ## [0.4.5] - 2026-11-06
 
 - Keep viewer controls below Electron's native title bar overlay and outside window drag regions.

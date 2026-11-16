@@ -10,6 +10,10 @@ async function waitFor(harness, condition) {
   }
 }
 
+function diagramActions(card) {
+  return card.querySelectorAll('.dsh-mmd-diagram-action');
+}
+
 test('view controls work before the first runtime import', async () => {
   const harness = await createClientHarness({ injectRuntime: false });
   try {
@@ -22,7 +26,7 @@ test('view controls work before the first runtime import', async () => {
     await waitFor(harness, () => document.querySelector('.dsh-mmd'));
     const card = document.querySelector('.dsh-mmd');
     assert.equal(card.querySelector('svg'), null);
-    const [codeButton, diagramButton] = card.querySelectorAll('button');
+    const [codeButton, diagramButton] = card.querySelectorAll('.dsh-mmd-view-control');
     codeButton.click();
     assert.equal(card.dataset.view, 'code');
     assert.equal(codeButton.getAttribute('aria-pressed'), 'true');
@@ -40,7 +44,7 @@ test('clearing a rendered source removes its stale card and fullscreen, then per
         const { code, document, pre, state, window } = harness;
         await waitFor(harness, () => document.querySelector('.dsh-mmd[data-state="ok"]'));
         const card = document.querySelector('.dsh-mmd');
-        card.querySelectorAll('button')[2].click();
+        diagramActions(card)[1].click();
         const viewer = document.querySelector('.dsh-mmd-viewer');
         assert.equal(viewer.hidden, false);
         const renderCount = state.renderCalls.length;
@@ -83,7 +87,7 @@ test('clearing source invalidates an in-flight render without waiting for the re
   }
 });
 
-test('fullscreen closes on parse errors and source limits and focuses the current code', async (t) => {
+test('parse errors and source limits close fullscreen but keep the last diagram editable', async (t) => {
   for (const source of ['flowchart LR\nA-->', `flowchart LR\n${'A'.repeat(50_001)}`, `flowchart LR\n${'A-->B\n'.repeat(2_001)}`]) {
     await t.test(source.length > 100 ? `source limit ${source.length}` : 'parse error', async () => {
       const harness = await createClientHarness();
@@ -91,20 +95,27 @@ test('fullscreen closes on parse errors and source limits and focuses the curren
         const { code, document, pre } = harness;
         await waitFor(harness, () => document.querySelector('.dsh-mmd[data-state="ok"]'));
         const card = document.querySelector('.dsh-mmd');
-        card.querySelectorAll('button')[2].click();
+        const actions = diagramActions(card);
+        const oldSvg = card.querySelector('.dsh-mmd-pane svg');
+        actions[1].click();
         const viewer = document.querySelector('.dsh-mmd-viewer');
+        assert.equal(viewer.hidden, false);
         code.textContent = source;
         await waitFor(harness, () => card.dataset.state === 'error');
         assert.equal(viewer.hidden, true);
         assert.equal(viewer.querySelector('svg'), null);
         assert.equal(document.body.style.overflow, '');
         assert.equal(pre.inert, false);
-        assert.equal(document.activeElement, card.querySelector('.dsh-mmd-code'));
-        assert.equal(card.dataset.view, 'code');
-        assert.equal(card.querySelector('.dsh-mmd-code').textContent, source);
+        assert.equal(card.dataset.view, 'diagram');
+        assert.equal(card.querySelector('.dsh-mmd-pane svg'), oldSvg);
+        assert.equal(card.querySelector('.dsh-mmd-notice')?.hidden, false);
+        assert.match(card.querySelector('.dsh-mmd-notice')?.textContent || '', /预览未更新/);
+        assert.equal(actions[0].disabled, true);
+        assert.equal(actions[1].disabled, true);
+        assert.equal(card.querySelector('.dsh-mmd-textarea')?.value, source);
         code.textContent = 'flowchart LR\nRECOVERED-->DONE';
         await waitFor(harness, () => card.dataset.state === 'ok');
-        card.querySelectorAll('button')[2].click();
+        actions[1].click();
         assert.equal(viewer.hidden, false);
         assert.ok(viewer.querySelector('svg'));
       } finally { await harness.cleanup(); }
@@ -118,7 +129,7 @@ test('a superseded render error cannot close the fullscreen viewer for a newer s
     const { code, document, state } = harness;
     await waitFor(harness, () => document.querySelector('.dsh-mmd[data-state="ok"]'));
     const card = document.querySelector('.dsh-mmd');
-    card.querySelectorAll('button')[2].click();
+    diagramActions(card)[1].click();
     const viewer = document.querySelector('.dsh-mmd-viewer');
     code.textContent = 'flowchart LR\nSLOW-->Z';
     await waitFor(harness, () => state.rejectSlowRender);

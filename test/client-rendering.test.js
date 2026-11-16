@@ -20,8 +20,10 @@ test('renders localized accessible cards and recovers from errors', async () => 
     const viewControls = card.querySelectorAll('.dsh-mmd-view-control');
     const codeButton = viewControls[0];
     const diagramButton = viewControls[1];
+    const editButton = viewControls[2];
     assert.equal(codeButton.textContent, '代码');
     assert.equal(diagramButton.textContent, '图形');
+    assert.equal(editButton.textContent, '编辑');
     codeButton.click();
     assert.equal(card.dataset.view, 'code');
     assert.equal(codeButton.getAttribute('aria-pressed'), 'true');
@@ -40,11 +42,19 @@ test('renders localized accessible cards and recovers from errors', async () => 
       /\[data-view='code'\]\[data-state='ok'\] \.dsh-mmd-diagram-action\{display:none\}/,
     );
 
+    editButton.click();
+    assert.equal(card.dataset.view, 'edit');
+    assert.equal(editButton.getAttribute('aria-pressed'), 'true');
+    assert.equal(card.querySelector('.dsh-mmd-textarea')?.value, 'flowchart LR\nA-->B');
+    assert.equal(window.getComputedStyle(card.querySelector('.dsh-mmd-editor')).display, 'flex');
+    assert.equal(window.getComputedStyle(card.querySelector('.dsh-mmd-pane')).display, 'block');
+
     document.documentElement.lang = 'en-US';
     await wait(10);
     assert.equal(card.querySelector('.dsh-mmd-label'), null);
     assert.equal(codeButton.textContent, 'Code');
     assert.equal(diagramButton.textContent, 'Diagram');
+    assert.equal(editButton.textContent, 'Edit');
     document.documentElement.lang = 'zh-CN';
     await wait(10);
 
@@ -52,12 +62,14 @@ test('renders localized accessible cards and recovers from errors', async () => 
     await wait(1_100);
     const invalidCard = invalid.pre.previousElementSibling;
     assert.equal(invalidCard?.dataset.state, 'error');
-    assert.equal(invalidCard?.dataset.view, 'code');
+    assert.equal(invalidCard?.dataset.view, 'edit');
     assert.match(invalidCard?.querySelector('.dsh-mmd-error')?.textContent || '', /渲染失败/);
     assert.equal(invalidCard?.querySelector('[role="status"]')?.textContent, '图表渲染失败，已显示源代码。');
     const invalidViewControls = invalidCard?.querySelectorAll('.dsh-mmd-view-control') || [];
-    assert.equal(invalidViewControls[0].hidden, true);
-    assert.equal(invalidViewControls[1].hidden, true);
+    assert.equal(invalidViewControls[0].hidden, false);
+    assert.equal(invalidViewControls[1].hidden, false);
+    assert.equal(invalidViewControls[2].hidden, false);
+    assert.equal(invalidCard?.querySelector('.dsh-mmd-textarea')?.value, 'flowchart LR\nA-->');
 
     invalid.code.textContent = 'flowchart LR\nA-->RECOVERED';
     await wait(700);
@@ -71,8 +83,11 @@ test('renders localized accessible cards and recovers from errors', async () => 
     const oversizedCard = oversized.pre.previousElementSibling;
     assert.equal(oversizedCard?.dataset.state, 'error');
     assert.match(oversizedCard?.querySelector('.dsh-mmd-error')?.textContent || '', /2000 行/);
-    assert.equal(oversizedCard?.querySelector('.dsh-mmd-view-control')?.hidden, true);
-    assert.equal(window.getComputedStyle(oversizedCard?.querySelector('.dsh-mmd-diagram-action')).display, 'none');
+    assert.equal(oversizedCard?.querySelector('.dsh-mmd-view-control')?.hidden, false);
+    const oversizedActions = oversizedCard?.querySelectorAll('.dsh-mmd-diagram-action') || [];
+    assert.notEqual(window.getComputedStyle(oversizedActions[0]).display, 'none');
+    assert.equal(oversizedActions[0].disabled, true);
+    assert.equal(oversizedCard?.querySelector('.dsh-mmd-textarea')?.value.startsWith('flowchart LR'), true);
     assert.equal(state.renderCalls.length, renderCountBeforeOversized);
 
     code.textContent = 'flowchart LR\nA-->FINAL';

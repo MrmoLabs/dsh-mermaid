@@ -13,10 +13,12 @@ test('supports accessible fullscreen viewing and direct SVG download', async () 
     embeddedStyle.textContent = '#diagram .node{fill:red}.edge{marker-end:url(#arrow)}';
     originalSvg.prepend(embeddedStyle);
 
-    const buttons = card.querySelectorAll('.dsh-mmd-btn');
+    const actions = card.querySelectorAll('.dsh-mmd-diagram-action');
+    const svgButton = actions[0];
+    const fullscreenButton = actions[1];
     assert.match(document.getElementById('dsh-mermaid/css')?.textContent || '', /\.dsh-mmd-btn:focus-visible\{outline:2px solid/);
-    buttons[2].focus();
-    buttons[2].click();
+    fullscreenButton.focus();
+    fullscreenButton.click();
     const viewer = document.querySelector('.dsh-mmd-viewer');
     assert.equal(viewer?.hidden, false);
     assert.equal(document.body.style.overflow, 'hidden');
@@ -56,7 +58,7 @@ test('supports accessible fullscreen viewing and direct SVG download', async () 
     assert.equal(viewer.hidden, true);
     assert.equal(document.body.style.overflow, '');
     assert.equal(card.inert, false);
-    assert.equal(document.activeElement, buttons[2]);
+    assert.equal(document.activeElement, fullscreenButton);
 
     const foreignObject = document.createElementNS(originalSvg.namespaceURI, 'foreignObject');
     const label = document.createElement('p');
@@ -64,7 +66,7 @@ test('supports accessible fullscreen viewing and direct SVG download', async () 
     foreignObject.append(label);
     originalSvg.append(foreignObject);
 
-    buttons[3].click();
+    svgButton.click();
     assert.equal(card.querySelector('.dsh-mmd-menu'), null);
     assert.equal(state.downloadedName, 'mermaid-flowchart.svg');
     assert.equal(card.querySelector('[role="status"]')?.textContent, 'SVG 已下载。');

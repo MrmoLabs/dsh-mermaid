@@ -57,7 +57,7 @@ test('GitHub installer forwards a safe exact add command to DSH', async () => {
   const windows = process.platform === 'win32';
   const executable = join(directory, windows ? 'dsh.cmd' : 'dsh');
   const body = windows
-    ? `@echo off\r\n> "${output}" echo %*\r\n`
+    ? '@echo off\r\n> "%~dp0args.txt" echo %*\r\n'
     : `#!/bin/sh\nprintf '%s' "$*" > '${output}'\n`;
 
   try {

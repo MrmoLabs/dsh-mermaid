@@ -18,6 +18,9 @@ test('recognizes supported language classes', () => {
 test('recognizes supported diagram sources', () => {
   assert.equal(diagramType('  flowchart TD\nA-->B'), 'flowchart');
   assert.equal(diagramType('graph LR\nA-->B'), 'graph');
+  assert.equal(diagramType('%% note\nflowchart LR\nA-->B'), 'flowchart');
+  assert.equal(diagramType('---\ntitle: demo\n---\nflowchart LR\nA-->B'), 'flowchart');
+  assert.equal(isMermaidSource('%% note\nflowchart LR\nA-->B'), true);
   assert.equal(isMermaidSource('graph LR\nA-->B'), true);
   assert.equal(isMermaidSource('sequenceDiagram\nA->>B: hello'), true);
   assert.equal(isMermaidSource('console.log("flowchart")'), false);

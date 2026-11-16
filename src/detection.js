@@ -10,8 +10,18 @@ const MERMAID_TYPES = new Set([
 ]);
 
 function diagramType(source) {
-  const match = DIAGRAM_TYPE_RE.exec(source);
-  return match ? match[1] : '';
+  let text = String(source || '').replace(/^\uFEFF/, '');
+  if (/^---\s*\n/.test(text)) {
+    const end = text.indexOf('\n---', 3);
+    if (end >= 0) text = text.slice(end + 4);
+  }
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('%%')) continue;
+    const match = DIAGRAM_TYPE_RE.exec(trimmed);
+    return match ? match[1] : '';
+  }
+  return '';
 }
 
 function hasMermaidLanguage(classNames) {
