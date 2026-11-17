@@ -1,5 +1,7 @@
 const MESSAGES = {
   en: {
+    configReadFailed: 'Configuration could not be read; using the default style.',
+    configInvalid: 'Configuration is invalid; using the default style.',
     viewOptions: 'Mermaid view options',
     diagramView: 'Diagram',
     codeView: 'Code',
@@ -36,6 +38,8 @@ const MESSAGES = {
     draftReset: 'Draft reset to the message source.',
   },
   'zh-CN': {
+    configReadFailed: '配置读取失败，当前使用默认样式。',
+    configInvalid: '配置无效，当前使用默认样式。',
     viewOptions: 'Mermaid 视图选项',
     diagramView: '图形',
     codeView: '代码',

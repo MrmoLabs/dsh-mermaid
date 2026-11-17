@@ -60,6 +60,54 @@ The block opens in **Diagram** view by default. Use **Code / Diagram / Edit** to
 
 ![Fullscreen English Mermaid diagram with zoom, reset, fit-to-window, and close controls](docs/images/fullscreen-en.jpg)
 
+## Global rendering styles (source version, unreleased)
+
+The defaults remain `auto` color and `classic` look. Colors support `auto` (follow DSH), `default`, `dark`, `neutral`, `forest`, and `base` (custom). Choose `classic` or `handDrawn` independently. Hand-drawn strokes were confirmed for flowcharts and state diagrams; other types may have little visible difference.
+
+The following workflow was verified with an isolated **DSH 0.2.2-rc.3 / Windows Web** profile:
+
+### Recommended: native settings form
+
+Open **Plugins → Installed plugins → dsh-mermaid** in the sidebar. The **Rendering style** form offers color and drawing-style selections without locating a file or writing YAML.
+
+- Select **Custom** to edit fonts, font size, base color, node fill/text/border and line colors under Common / Light / Dark. Empty fields inherit common variables or Mermaid defaults.
+- **Base color** edits `primaryColor`; **Node fill** edits `mainBkg`, used by flowcharts and other types. They are saved independently without overwriting advanced settings, with a hint when a separate fill exists. Other diagram types may use dedicated variables.
+- Expand **Advanced variables (JSON)** to paste additional variables, including diagram-specific nested objects and arrays. Basic fields preserve unrelated advanced variables, and switching tabs retains each group's input.
+- **Load Indigo / Slate example** provides an editable starting point. **Restore defaults** also changes only the draft until saved.
+- **Save** validates all groups, submits one revisioned mutation through the host settings service, and confirms accepted readback. Failed or conflicting writes retain the draft; **Discard changes** loads current host values.
+- Invalid saved settings retain their original fields and variable trees, with a read-only copy of the original JSON. Repairing one field does not erase the remaining palette. Unsupported structures block Save until repaired in the profile or explicitly replaced with defaults.
+- Returning to saved values or changing only JSON formatting does not report unsaved changes. Invalid JSON drafts remain protected on refresh/close.
+- Settings drafts survive navigation between the plugin page and conversations. Unsaved settings trigger a browser prompt before refresh/close. Saved settings apply to diagrams after a refresh: **copy or download conversation diagram drafts first**.
+
+The editor loads on demand and uses host form controls, buttons and typography. It adds no private write endpoint or second storage layer. Hosts without the native form services can still use the profile-file workflow below.
+
+### Advanced: edit the profile file
+
+1. Open the current profile's user layer: `%USERPROFILE%\.dsh\profiles\web\cordis.patch.yml`. If `DSH_HOME` is set, use that root instead. Other systems use `~/.dsh/profiles/web/cordis.patch.yml`. Desktop generally uses the `desktop` profile; its native window remains unverified for this change.
+2. Edit `config` on the existing `id: ui-mermaid` override. If the user layer has no such row, add the following **id-targeted override** for the already-installed plugin. Preserve other rows. Do not insert a second plugin or edit files under `node_modules`.
+
+```yaml
+- id: ui-mermaid
+  config:
+    theme: auto
+    look: classic
+```
+
+3. Save as **UTF-8 without BOM**. The tested host watches and reloads the profile patch; restart DSH on other versions. Open pages retain their configuration snapshot, with no automatic refresh or cross-window synchronization.
+4. **Copy or download any card drafts first**, then refresh the page. Refreshing loses drafts. The user layer survives host restarts and bundle replacement; home-level `cordis.patch.yml` and command-line `--patch` overlays take precedence.
+
+Custom variables apply only to `theme: base`, grouped under `themeVariables.common / light / dark`. Merge the [complete indigo/slate example](docs/examples/render-style-indigo.patch.yml) into your existing patch. The active branch recursively overrides common values; arrays replace rather than concatenate. Missing branches use common and Mermaid-derived values. Unspecified `darkMode` follows DSH. Other color themes retain your stored variables but do not pass them to Mermaid. Card and fullscreen backgrounds follow DSH; check contrast when using fixed themes or custom colors.
+
+Only `theme`, `look`, and `themeVariables` are accepted. Variables allow nested plain objects, arrays, strings, booleans and finite numbers; null, unsafe prototype keys and non-JSON values are rejected. Limits: 64 KiB UTF-8 JSON, 8 levels counting each group object as level 1, 2,048 aggregate properties/elements across groups, and 8,192 characters per string. Mermaid may ignore unknown variables; structural validation does not guarantee styling or layout.
+
+Invalid structure falls back to the complete `auto + classic` default and leaves a separate visible configuration warning with bounded field paths. Read failures, the 3-second deadline and responses exceeding 128 KiB also use defaults. Valid variable combinations that fail to render keep the last preview stale and disable SVG export. Stored configuration is never rewritten.
+
+For per-diagram exceptions, use native Mermaid frontmatter in **Edit**, as in the [single-diagram example](docs/examples/single-diagram-style.mmd). Legacy `%%{init: ...}%%` remains supported. Prefer one declaration mechanism; Mermaid 11.17.0 decides precedence if both appear. Per-diagram `themeVariables` use native Mermaid variables directly, without the plugin's common/light/dark groups. Copy and .mmd preserve the original source without inherited global values; Reset restores only the message source.
+
+Diagrams read their snapshot from the same-origin read-only `/dsh-mermaid/config.json` endpoint. The tested host serves this static route with anonymous HTTP 200 and no CORS headers; do not store secrets in style variables. The native form saves through the host's existing authenticated settings service.
+
+See [Compatibility](#compatibility) for tested hosts and platform limitations.
+
 ## Features
 
 - **Inline editing** — edit the Mermaid source in place with a debounced live preview, keeping the last good diagram while the draft is invalid or rendering.

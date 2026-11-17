@@ -1,6 +1,41 @@
 let accessibleTitleUid = 0;
 let viewerCloneUid = 0;
 
+// Skip comments and strings. Only map complete fragment URLs or selector IDs,
+// never a shorter ID prefix or a hexadecimal color in a declaration.
+const CSS_REFERENCE = /\/\*[\s\S]*?\*\/|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|url\(\s*(['"]?)#([^)'"\s]+)\1\s*\)|#((?:\\[0-9a-fA-F]{1,6}[ \t\r\n\f]?|\\[^\r\n\f]|[\w\u0080-\uFFFF-])+)|([{};])/g;
+
+function cssIdentifier(value) {
+  return value.replace(/\\([0-9a-fA-F]{1,6})[ \t\r\n\f]?|\\([^\r\n\f])/g, (_match, hex, character) => {
+    if (!hex) return character;
+    const code = Number.parseInt(hex, 16);
+    return code && code <= 0x10FFFF && (code < 0xD800 || code > 0xDFFF) ? String.fromCodePoint(code) : '\uFFFD';
+  });
+}
+
+function rewriteCssIds(css, idMap) {
+  const tokens = [...css.matchAll(CSS_REFERENCE)];
+  let boundary;
+  // The next delimiter distinguishes selector preludes from declarations.
+  // Tokens inside comments/strings cannot change that boundary.
+  for (let index = tokens.length - 1; index >= 0; index--) {
+    const token = tokens[index];
+    const [, quote, urlId, selectorId, delimiter] = token;
+    if (delimiter) boundary = delimiter;
+    else if (urlId !== undefined && idMap.has(urlId)) token.replacement = `url(${quote}#${idMap.get(urlId)}${quote})`;
+    else if (selectorId !== undefined && boundary === '{') {
+      const replacement = idMap.get(cssIdentifier(selectorId));
+      if (replacement) token.replacement = `#${replacement}`;
+    }
+  }
+  let offset = 0;
+  return tokens.map((token) => {
+    const piece = css.slice(offset, token.index) + (token.replacement ?? token[0]);
+    offset = token.index + token[0].length;
+    return piece;
+  }).join('') + css.slice(offset);
+}
+
 function serializeSvg(svg) {
   const xml = new window.XMLSerializer().serializeToString(svg);
   return `<?xml version="1.0" encoding="UTF-8"?>\n${xml}`;
@@ -70,11 +105,7 @@ function rewriteSvgIds(svg) {
   }
 
   for (const style of svg.querySelectorAll('style')) {
-    let css = style.textContent || '';
-    for (const [original, replacement] of idMap) {
-      css = css.split(`#${original}`).join(`#${replacement}`);
-    }
-    style.textContent = css;
+    style.textContent = rewriteCssIds(style.textContent || '', idMap);
   }
 }
 

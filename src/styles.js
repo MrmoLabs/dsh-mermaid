@@ -24,6 +24,9 @@ const CSS = `
 .dsh-mmd-reset{min-height:24px;padding:1px 8px;font-size:11px}
 .dsh-mmd-notice{font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-tertiary,#888);padding:8px 14px 0;white-space:pre-wrap}
 .dsh-mmd-notice[hidden]{display:none}
+.dsh-mmd-config-warning,.dsh-mmd-viewer-status{font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-secondary,#888);padding:8px 14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.dsh-mmd-config-warning[hidden],.dsh-mmd-viewer-status[hidden]{display:none}
+.dsh-mmd[data-view='edit'] .dsh-mmd-config-warning{flex-basis:100%;order:3}
 .dsh-mmd-notice[data-tone='error']{color:var(--dsw-alias-state-error-primary,#d33)}
 .dsh-mmd-error{display:none;font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-state-error-primary,#d33);padding:8px 14px 0;white-space:pre-wrap}
 .dsh-mmd-error:empty{display:none}

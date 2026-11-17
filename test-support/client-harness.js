@@ -1,13 +1,18 @@
 import { Window } from 'happy-dom';
 import { createTooltipPositioner } from '../src/tooltip.js';
 import { preserveViewPosition } from '../src/scroll.js';
+import { normalizeRenderConfig } from '../src/render-config.js';
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', locale = 'zh-CN', bindFunctions, injectRuntime = true } = {}) {
+async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', locale = 'zh-CN', bindFunctions, injectRuntime = true, config, fetchConfig } = {}) {
   const window = new Window({ url: 'http://localhost/' });
   const previousGlobals = new Map();
   const browserGlobals = {
+    fetch: async (...args) => {
+      state.configRequests += 1;
+      return fetchConfig ? fetchConfig(...args) : new Response(JSON.stringify(normalizeRenderConfig(config)), { headers: { 'content-type': 'application/json' } });
+    },
     window,
     document: window.document,
     Node: window.Node,
@@ -28,6 +33,7 @@ async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', loca
 
   document.documentElement.lang = locale;
   const state = {
+    configRequests: 0,
     downloadedName: '',
     initializedOptions: [],
     initializedThemes: [],

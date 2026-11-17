@@ -1,0 +1,20 @@
+# Merge this id-targeted override into the current profile's cordis.patch.yml.
+# Do not insert a second plugin or replace unrelated profile overrides.
+- id: ui-mermaid
+  config:
+    theme: base
+    look: classic
+    themeVariables:
+      common:
+        fontFamily: '"Noto Sans CJK SC", system-ui, sans-serif'
+        fontSize: '15px'
+      light:
+        primaryColor: '#e0e7ff'
+        primaryTextColor: '#312e81'
+        primaryBorderColor: '#818cf8'
+        lineColor: '#64748b'
+      dark:
+        primaryColor: '#312e81'
+        primaryTextColor: '#e0e7ff'
+        primaryBorderColor: '#818cf8'
+        lineColor: '#94a3b8'

@@ -45,6 +45,7 @@ function createFullscreenViewer({ t }) {
     viewer.fit.setAttribute('aria-label', t('fitWindow'));
     viewer.close.textContent = t('closeViewer');
     viewer.close.setAttribute('aria-label', t('closeViewer'));
+    viewer.status.textContent = viewer.updating ? t('previewUpdating') : '';
     if (viewer.entry) {
       const type = viewer.entry.badge.textContent || 'mermaid';
       viewer.title.textContent = t('viewerTitle', { type });
@@ -64,6 +65,14 @@ function createFullscreenViewer({ t }) {
     viewer.stage.replaceChildren(clone);
     viewer.title.textContent = t('viewerTitle', { type: entry.badge.textContent || 'mermaid' });
     if (shouldFit) fit();
+    setUpdating(false);
+  }
+
+  function setUpdating(updating) {
+    if (!viewer) return;
+    viewer.updating = updating;
+    viewer.status.hidden = !updating;
+    viewer.status.textContent = updating ? t('previewUpdating') : '';
   }
 
   function focusableElements() {
@@ -139,11 +148,15 @@ function createFullscreenViewer({ t }) {
     const stage = document.createElement('div');
     stage.className = 'dsh-mmd-viewer-stage';
     viewport.appendChild(stage);
+    const status = document.createElement('div');
+    status.className = 'dsh-mmd-viewer-status';
+    status.hidden = true;
+    status.setAttribute('role', 'status');
     toolbar.append(title, zoomOut, zoomLabel, zoomIn, fitButton, closeButton);
-    overlay.append(toolbar, viewport);
+    overlay.append(toolbar, status, viewport);
     document.body.appendChild(overlay);
     viewer = {
-      overlay, title, viewport, stage, zoomOut, zoomLabel, zoomIn,
+      overlay, title, viewport, stage, status, updating: false, zoomOut, zoomLabel, zoomIn,
       fit: fitButton, close: closeButton, entry: null,
       scale: 1, panX: 0, panY: 0, dragging: false, pointerId: null,
       lastX: 0, lastY: 0, previousBodyOverflow: '', trigger: null, inertedElements: [],
@@ -229,7 +242,7 @@ function createFullscreenViewer({ t }) {
     viewer = null;
   }
 
-  return { close, destroy, fit, isOpen, isOpenFor, localize, open, update };
+  return { close, destroy, fit, isOpen, isOpenFor, localize, open, update, setUpdating };
 }
 
 export { createFullscreenViewer };

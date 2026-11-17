@@ -50,6 +50,28 @@ if (scenario === 'with-dom') {
       await assert.rejects(runtime.parse(source), `expected invalid input to be rejected: ${source}`);
     }
 
+    // Every security/resource default stays locked against native diagram overrides.
+    for (const prefix of [
+      '---\nconfig:\n  theme: base\n  look: handDrawn\n  securityLevel: loose\n  startOnLoad: true\n  maxTextSize: 999999\n  maxEdges: 999999\n  suppressErrorRendering: false\n  secure: []\n---\n',
+      '%%{init: {"theme":"base","look":"handDrawn","securityLevel":"loose","startOnLoad":true,"maxTextSize":999999,"maxEdges":999999,"suppressErrorRendering":false,"secure":[]}}%%\n',
+    ]) {
+      runtime.initialize({ theme: 'forest', look: 'classic', startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true, maxTextSize: 50000, maxEdges: 2000 });
+      await runtime.parse(prefix + labeledFlowchart);
+      const config = runtime.mermaidAPI.getConfig();
+      assert.equal(config.theme, 'base');
+      assert.equal(config.look, 'handDrawn');
+      assert.equal(config.securityLevel, 'strict');
+      assert.equal(config.startOnLoad, false);
+      assert.equal(config.maxTextSize, 50000);
+      assert.equal(config.maxEdges, 2000);
+      assert.equal(config.suppressErrorRendering, true);
+      for (const key of ['secure', 'securityLevel', 'startOnLoad', 'maxTextSize', 'suppressErrorRendering', 'maxEdges']) assert.ok(config.secure.includes(key));
+      runtime.initialize({ theme: 'forest', look: 'classic', startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true });
+      await runtime.parse(labeledFlowchart);
+      assert.equal(runtime.mermaidAPI.getConfig().theme, 'forest');
+      assert.equal(runtime.mermaidAPI.getConfig().look, 'classic');
+    }
+
     // Exercise the render adapter with the real parser and no layout dependency.
     const renderCalls = [];
     runtime.render = async (_id, source) => {
@@ -98,6 +120,9 @@ if (scenario === 'with-dom') {
     for (const [prefix, newline] of [
       ['%% Leading comment A[Keep(test)]\n\n', '\n'],
       ['---\r\ntitle: A[Keep(test)]\r\nconfig:\r\n  look: handDrawn\r\n---\r\n%% Keep this too\r\n', '\r\n'],
+      ['%%{init: {"theme":"base","themeVariables":{"fontFamily":"A[Keep(test)]"}}}%%\n', '\n'],
+      ['%% Leading comment\r\n%%{init: {\r\n  "theme":"base",\r\n  "look":"handDrawn"\r\n}}%%\r\n%% Keep this too\r\n', '\r\n'],
+      ['---\nconfig:\n  theme: base\n---\n%%{init: {"look":"handDrawn"}}%%\n', '\n'],
     ]) {
       const source = prefix + issue9.replaceAll('\n', newline);
       const quoted = prefix + quotedIssue9.replaceAll('\n', newline);

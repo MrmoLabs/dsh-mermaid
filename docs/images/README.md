@@ -8,3 +8,5 @@ Both images are real browser captures of dsh-mermaid 0.4.4 running in an isolate
 The conversation uses a local documentation fixture without a model request or private conversation data. Its diagram source is in [pull-request-workflow.mmd](../examples/pull-request-workflow.mmd).
 
 The DSH host ran on Node.js 24.21.0 bundled with DSH Desktop. The README records this session as a UI smoke check covering English flowchart rendering, toolbar display, opening and closing fullscreen, and fullscreen panning.
+
+`render-settings-zh-CN.png` is a real 1280 × 900 capture of the native plugin configuration page in an isolated DSH Web 0.2.2-rc.3 profile on 2026-11-16, using Chrome 157.0.8103.78. It shows the unreleased local Mermaid settings implementation, Simplified Chinese labels, staged-example controls, common color fields and the advanced JSON entry. No model request or private user profile was used.

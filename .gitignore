@@ -1,6 +1,7 @@
 node_modules/
 .npm-cache/
 lib/
+.runtime/
 *.tgz
 *.log
 .DS_Store

@@ -8,6 +8,9 @@ import { resolveLocale, translate } from './i18n.js';
 import { CSS } from './styles.js';
 import { ensureSvgAccessibility, localizeGeneratedSvgTitle, serializeSvg } from './svg.js';
 import { createFullscreenViewer } from './viewer.js';
+import { DEFAULT_STYLE, effectiveStyle, styleKey } from './render-config.js';
+import { createStyleLoader } from './style-loader.js';
+import { registerNativeSettings } from './settings-registration.js';
 
 const TAG_ID = 'dsh-mermaid/css';
 const STABLE_MS = 300;
@@ -28,6 +31,8 @@ let renderQueueActive = false;
 let tooltipPositioner = null;
 let tooltipPositionerFactory = null;
 let preserveViewPosition = null;
+let mount = null;
+let mountSequence = 0;
 const entries = new WeakMap();
 const wrappers = new Set();
 const renderQueue = [];
@@ -98,8 +103,47 @@ function syncDraftFromMessage(entry) {
 }
 
 function isPreviewFresh(entry) {
-  if (!entry.lastRendered || !entry.pane.querySelector('svg')) return false;
-  return currentRawSource(entry).trim() === entry.lastRendered;
+  if (!entry.lastRendered || entry.lastRenderState !== 'ok' || entry.composing || !entry.pane.querySelector('svg')) return false;
+  return currentRawSource(entry).trim() === entry.lastRendered && entry.lastRenderedStyleKey === currentStyleKey();
+}
+
+function canRestorePreview(entry) {
+  return Boolean(entry.lastRendered && entry.pane.querySelector('svg') && !entry.composing
+    && currentRawSource(entry).trim() === entry.lastRendered && entry.lastRenderedStyleKey === currentStyleKey()
+    && entry.failedTarget !== `${entry.lastRendered}\0${entry.lastRenderedStyleKey}`);
+}
+
+function currentStyle() {
+  return effectiveStyle(mount?.snapshot?.style || DEFAULT_STYLE, isDark());
+}
+function currentStyleKey() { return styleKey(currentStyle()); }
+
+function updateConfigWarning(entry) {
+  const snapshot = mount?.snapshot;
+  entry.configWarning.hidden = !snapshot?.warning;
+  if (!snapshot?.warning) return;
+  const paths = [...new Set(snapshot.diagnostics.map((item) => item.path).filter(Boolean))];
+  // A separate live region prevents render success from clearing the warning.
+  if (!mount.warningAnnounced && entry.wrapper.isConnected) {
+    mount.warningAnnounced = true;
+    entry.configWarning.setAttribute('role', 'status');
+    entry.configWarning.setAttribute('aria-live', 'polite');
+  }
+  const message = t(snapshot.warning) + (paths.length ? ` (${paths.join(', ')})` : '');
+  if (entry.configWarning.textContent !== message) entry.configWarning.textContent = message;
+}
+
+function loadStyle(owner) {
+  owner.promise ||= owner.loader.load().then((snapshot) => {
+    if (mount !== owner) return snapshot;
+    owner.snapshot = snapshot;
+    for (const wrapper of wrappers) {
+      const entry = entries.get(wrapper._dshCode);
+      if (entry) updateConfigWarning(entry);
+    }
+    return snapshot;
+  });
+  return owner.promise;
 }
 
 function setActionAvailability(entry) {
@@ -132,6 +176,7 @@ function setNotice(entry, key, parameters = {}, tone = 'info') {
   entry.noticeDetailParameters = null;
   entry.noticeTone = tone;
   updateNotice(entry);
+  updateConfigWarning(entry);
 }
 
 function setPreviewStale(entry, key, parameters) {
@@ -157,6 +202,7 @@ function localizeEntry(entry) {
   entry.draftHint.textContent = t('draftHint');
   if (entry.statusKey) entry.statusEl.textContent = t(entry.statusKey, entry.statusParameters);
   updateNotice(entry);
+  updateConfigWarning(entry);
   localizeGeneratedSvgTitle(
     entry.pane.querySelector('svg'),
     t('diagramTitle', { type: entry.badge.textContent || 'mermaid' }),
@@ -178,12 +224,12 @@ function refreshLocale() {
   fullscreenViewer.localize();
 }
 
-function initializeMermaid(runtime) {
+function initializeMermaid(runtime, style) {
   runtime.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
     suppressErrorRendering: true,
-    theme: isDark() ? 'dark' : 'default',
+    ...JSON.parse(JSON.stringify(style)),
     maxTextSize: MAX_SOURCE_CHARS,
     maxEdges: 2_000,
   });
@@ -242,6 +288,7 @@ function setEntryStatus(entry, key, parameters = {}) {
 
 function setEntryRendered(entry) {
   entry.lastRenderState = 'ok';
+  entry.failedTarget = null;
   entry.messageKey = null;
   entry.messageParameters = null;
   entry.wrapper.dataset.state = 'ok';
@@ -250,6 +297,7 @@ function setEntryRendered(entry) {
   setNotice(entry, null);
   setEntryStatus(entry, 'rendered');
   setActionAvailability(entry);
+  if (fullscreenViewer.isOpenFor(entry)) fullscreenViewer.setUpdating(false);
 }
 
 function setEntryLoading(entry) {
@@ -268,6 +316,7 @@ function setEntryLoading(entry) {
   }
   setEntryStatus(entry, 'rendering');
   setActionAvailability(entry);
+  if (fullscreenViewer.isOpenFor(entry)) fullscreenViewer.setUpdating(true);
 }
 
 function setEntryError(entry, key, parameters, statusKey = key) {
@@ -277,6 +326,7 @@ function setEntryError(entry, key, parameters, statusKey = key) {
   entry.messageKey = key;
   entry.messageParameters = parameters;
   entry.lastRenderState = 'error';
+  entry.failedTarget = `${currentRawSource(entry).trim()}\0${currentStyleKey()}`;
   if (hasSvg) {
     entry.pane.dataset.state = 'stale';
     entry.errorEl.textContent = '';
@@ -461,6 +511,9 @@ function createEntry(code) {
   const noticeEl = document.createElement('div');
   noticeEl.className = 'dsh-mmd-notice';
   noticeEl.hidden = true;
+  const configWarning = document.createElement('div');
+  configWarning.className = 'dsh-mmd-config-warning';
+  configWarning.hidden = true;
   const errorEl = document.createElement('div');
   errorEl.className = 'dsh-mmd-error';
   const statusEl = document.createElement('div');
@@ -469,16 +522,17 @@ function createEntry(code) {
   statusEl.setAttribute('aria-live', 'polite');
   statusEl.setAttribute('aria-atomic', 'true');
 
-  body.append(pane, codePane, editorPane, noticeEl, errorEl, statusEl);
+  body.append(pane, codePane, editorPane, configWarning, noticeEl, errorEl, statusEl);
   bar.append(badge, btnCode, btnDiagram, btnEdit, actionSlot);
   wrapper.append(bar, body);
 
   const entry = {
     code, wrapper, bar, pane, codePane, editorPane, editor, editorFooter, draftHint, btnReset,
-    noticeEl, errorEl, statusEl, badge, btnDiagram, btnCode, btnEdit,
+    noticeEl, configWarning, errorEl, statusEl, badge, btnDiagram, btnCode, btnEdit,
     btnFullscreen, btnDownloadSvg, btnCopy, btnDownloadMmd, actionSlot,
     draft: code.textContent || '', draftDirty: false, composing: false,
-    lastRendered: '', lastRenderState: 'idle',
+    lastRendered: '', lastRenderedStyleKey: '', lastRenderState: 'idle',
+    targetStyleKey: currentStyleKey(), mountId: mount.id,
     stableTimer: null, renderTimer: null, renderGeneration: 0, viewAdjustment: 0,
     messageKey: 'rendering', messageParameters: {},
     statusKey: null, statusParameters: {}, tooltipPositioner,
@@ -492,7 +546,7 @@ function createEntry(code) {
   btnDiagram.addEventListener('click', () => setViewFromControl(entry, 'diagram'));
   btnCode.addEventListener('click', () => setViewFromControl(entry, 'code'));
   btnEdit.addEventListener('click', () => setViewFromControl(entry, 'edit'));
-  btnFullscreen.addEventListener('click', () => fullscreenViewer.open(entry));
+  btnFullscreen.addEventListener('click', () => { if (isPreviewFresh(entry)) fullscreenViewer.open(entry); });
   btnDownloadSvg.addEventListener('click', () => downloadSvg(entry));
   btnCopy.addEventListener('click', () => { void copySource(entry); });
   btnDownloadMmd.addEventListener('click', () => downloadMmd(entry));
@@ -507,6 +561,7 @@ function createEntry(code) {
     entry.composing = true;
     cancelScheduledRender(entry);
     entry.renderGeneration += 1;
+    setEntryLoading(entry);
   });
   editor.addEventListener('compositionend', () => {
     entry.composing = false;
@@ -546,12 +601,18 @@ async function renderDiagram(entry) {
     setEntryEmpty(entry);
     return;
   }
-  if (source === entry.lastRendered && entry.lastRenderState === 'ok' && entry.pane.querySelector('svg')) {
+  if (canRestorePreview(entry)) {
     setEntryRendered(entry);
     return;
   }
 
   const generation = ++entry.renderGeneration;
+  const owner = mount;
+  // The configuration request is shared; style is captured only after it settles.
+  let capturedKey;
+  const isCurrent = () => mount === owner && owner?.id === entry.mountId
+    && generation === entry.renderGeneration && entry.wrapper.isConnected && entry.code.isConnected
+    && currentRawSource(entry).trim() === source && (!capturedKey || capturedKey === currentStyleKey());
   entry.badge.textContent = diagramType(source) || 'mermaid';
   if (!entry.draftDirty) entry.codePane.textContent = raw;
   setEntryLoading(entry);
@@ -571,14 +632,15 @@ async function renderDiagram(entry) {
   }
 
   try {
-    const runtime = await loadMermaidRuntime();
-    if (generation !== entry.renderGeneration || !entry.wrapper.isConnected) return;
-    if (currentRawSource(entry).trim() !== source) return;
-    initializeMermaid(runtime);
+    const [runtime, snapshot] = await Promise.all([loadMermaidRuntime(), loadStyle(owner)]);
+    if (!isCurrent()) return;
+    const style = effectiveStyle(snapshot.style, isDark());
+    capturedKey = styleKey(style);
+    entry.targetStyleKey = capturedKey;
+    initializeMermaid(runtime, style);
     const id = `dsh-mmd-${++uid}`;
     const { svg, bindFunctions } = await runtime.render(id, source);
-    if (generation !== entry.renderGeneration || !entry.wrapper.isConnected) return;
-    if (currentRawSource(entry).trim() !== source) return;
+    if (!isCurrent()) return;
     // Binding requires the mounted SVG. Keep the original nodes for rollback
     // so a binding failure cannot separate the preview from lastRendered.
     const previousNodes = [...entry.pane.childNodes];
@@ -601,12 +663,16 @@ async function renderDiagram(entry) {
       entry.pane.replaceChildren(...previousNodes);
       throw error;
     }
+    if (!isCurrent()) {
+      entry.pane.replaceChildren(...previousNodes);
+      return;
+    }
     entry.lastRendered = source;
+    entry.lastRenderedStyleKey = capturedKey;
     setEntryRendered(entry);
     if (fullscreenViewer.isOpenFor(entry)) fullscreenViewer.update(entry, false);
   } catch (error) {
-    if (generation !== entry.renderGeneration || !entry.wrapper.isConnected) return;
-    if (currentRawSource(entry).trim() !== source) return;
+    if (!isCurrent()) return;
     const parameters = { detail: error?.message || String(error) };
     const hasSvg = Boolean(entry.pane.querySelector('svg'));
     setEntryError(entry, 'renderFailed', parameters, hasSvg ? 'previewStaleStatus' : 'renderFailedStatus');
@@ -620,6 +686,7 @@ function cancelScheduledRender(entry) {
 
 function scheduleRender(entry) {
   cancelScheduledRender(entry);
+  entry.renderGeneration += 1;
   if (!entry.draftDirty && !entry.composing) {
     syncDraftFromMessage(entry);
     if (!(entry.code.textContent || '').trim()) {
@@ -628,7 +695,7 @@ function scheduleRender(entry) {
     }
   }
   // Reflect stale previews during the debounce and while other cards render.
-  if (entry.lastRenderState === 'ok' && isPreviewFresh(entry)) setEntryRendered(entry);
+  if (canRestorePreview(entry)) setEntryRendered(entry);
   else if (!currentRawSource(entry).trim()) setEntryEmpty(entry);
   else setEntryLoading(entry);
   if (entry.composing) return;
@@ -723,19 +790,23 @@ function handleMutations(mutations) {
 }
 
 function reRenderAll() {
+  const key = currentStyleKey();
   for (const wrapper of wrappers) {
     const entry = entries.get(wrapper._dshCode);
-    if (entry) {
-      entry.lastRendered = '';
-      entry.lastRenderState = 'idle';
+    if (entry && entry.targetStyleKey !== key) {
+      entry.targetStyleKey = key;
       scheduleRender(entry);
     }
   }
 }
 
 function apply(ctx) {
+  registerNativeSettings(ctx, typeof require === 'function' ? require : null);
   ctx.effect(() => {
     if (typeof document === 'undefined' || !document.body) return undefined;
+    if (mount) throw new Error('dsh-mermaid: duplicate client mount');
+    const owner = { id: ++mountSequence, loader: createStyleLoader(), snapshot: null, promise: null, warningAnnounced: false };
+    mount = owner;
     currentLocale = detectLocale();
     injectCss();
     const positions = { disposed: false, instance: null };
@@ -765,6 +836,8 @@ function apply(ctx) {
     document.querySelectorAll('pre code').forEach(maybeEnhance);
 
     return () => {
+      if (mount === owner) mount = null;
+      owner.loader.dispose();
       observer.disconnect();
       themeObserver.disconnect();
       localeObserver.disconnect();
