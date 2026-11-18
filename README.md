@@ -28,7 +28,9 @@ If `dsh` is not on your PATH, invoke it through npx:
 npx.cmd --yes @deepseek-ai/dsh plugin --profile web add -w dsh-mermaid
 ```
 
-For **DSH Desktop**, replace `--profile web` with `--profile desktop`. DSH installs the package through pnpm and automatically registers its `dsh.bundle` declaration in the selected profile. Restart DSH Web or DSH Desktop after installation; for an already running Web session, refresh the browser page as well.
+For **DSH Desktop**, use the `dsh` command supplied by the Desktop installation and replace `--profile web` with `--profile desktop`. The npm/npx DSH CLI cannot manage the reserved `desktop` profile on current Desktop versions. If the bundled command is not on your PATH, invoke `<DSH Desktop installation>\resources\runtime\cli\bin\dsh.cmd` on Windows.
+
+DSH installs the package through pnpm and automatically registers its `dsh.bundle` declaration in the selected profile. Restart DSH Web or DSH Desktop after installation; for an already running Web session, refresh the browser page as well.
 
 ### 2. Render a diagram
 
@@ -64,7 +66,7 @@ The block opens in **Diagram** view by default. Use **Code / Diagram / Edit** to
 
 The defaults remain `auto` color and `classic` look. Colors support `auto` (follow DSH), `default`, `dark`, `neutral`, `forest`, and `base` (custom). Choose `classic` or `handDrawn` independently. Hand-drawn strokes were confirmed for flowcharts and state diagrams; other types may have little visible difference.
 
-The following workflow was verified with an isolated **DSH 0.2.2-rc.3 / Windows Web** profile:
+The following workflow was verified with **DSH 0.2.2-rc.3 on Windows Web and Desktop**:
 
 ### Recommended: native settings form
 
@@ -83,7 +85,7 @@ The editor loads on demand and uses host form controls, buttons and typography. 
 
 ### Advanced: edit the profile file
 
-1. Open the current profile's user layer: `%USERPROFILE%\.dsh\profiles\web\cordis.patch.yml`. If `DSH_HOME` is set, use that root instead. Other systems use `~/.dsh/profiles/web/cordis.patch.yml`. Desktop generally uses the `desktop` profile; its native window remains unverified for this change.
+1. Open the current profile's user layer: `%USERPROFILE%\.dsh\profiles\web\cordis.patch.yml`. If `DSH_HOME` is set, use that root instead. Other systems use `~/.dsh/profiles/web/cordis.patch.yml`. For Desktop, replace `web` with `desktop`.
 2. Edit `config` on the existing `id: ui-mermaid` override. If the user layer has no such row, add the following **id-targeted override** for the already-installed plugin. Preserve other rows. Do not insert a second plugin or edit files under `node_modules`.
 
 ```yaml
@@ -130,7 +132,7 @@ dsh plugin --profile web update -w dsh-mermaid
 dsh plugin --profile web remove -w dsh-mermaid
 ```
 
-If needed, replace the leading `dsh` with `npx.cmd --yes @deepseek-ai/dsh`. Restart the corresponding DSH application afterward and refresh any open Web page. See the [changelog](CHANGELOG.md) for release details.
+For Web, you can replace the leading `dsh` with `npx.cmd --yes @deepseek-ai/dsh`. Desktop requires its bundled `dsh` command. Restart the corresponding DSH application afterward and refresh any open Web page. Saved profile settings are retained when the plugin is replaced; copy or download any diagram drafts before refreshing. See the [changelog](CHANGELOG.md) for release details.
 
 ## Troubleshooting
 
@@ -144,9 +146,17 @@ If needed, replace the leading `dsh` with `npx.cmd --yes @deepseek-ai/dsh`. Rest
 
 ## Compatibility
 
-The most recent UI check was on **2026-10-28**, using Windows / Chrome, `@deepseek-ai/dsh 0.2.1-rc.3` (Web profile), and `dsh-mermaid 0.4.4`. The DSH host ran on Node.js 24.21.0 bundled with DSH Desktop.
+The current **unreleased source** was checked on **2026-11-17**:
 
-An isolated environment with a local example conversation confirmed English flowchart rendering, toolbar display, opening and closing fullscreen, and fullscreen panning. The screenshots above come from that environment. This was a UI smoke check; it did not cover a full feature regression or the native Desktop window.
+| Environment | DSH version | Verified behavior |
+| --- | --- | --- |
+| Windows Web / Chrome | `0.2.1-rc.2`, Desktop-bundled `0.2.2-rc.3` | Eight diagram types, settings save/reload, fullscreen, SVG export and package upgrades. |
+| Windows Desktop native window | `0.2.2-rc.3` | Flowchart rendering/editing, settings save, fullscreen, native SVG saving and package upgrades. |
+| Linux x64 Web host / Windows Chrome | `0.2.1-rc.2` | Eight diagram types, settings save/reload, fullscreen, SVG export and package upgrades. |
+
+Upgrading from npm `0.4.5` to the current build retained saved rendering settings and other profile overrides. The Linux host ran on Node.js 24.22.3 in a Debian container; a Linux-native browser and macOS were not tested.
+
+Fixed themes on opposite host backgrounds and incomplete `base` palettes can make text hard to read. Prefer `auto` for host-theme switching, or check both light and dark custom variable branches. The earlier screenshots above remain from the 2026-10-28 Web check. These results apply to the source version and do not imply a new npm release.
 
 DSH is a developer preview; newer versions may change its plugin loader or Markdown DOM. When [reporting an issue](https://github.com/MrmoLabs/dsh-mermaid/issues), include your DSH, plugin, and Node.js versions, Web/Desktop profile, and a minimal Mermaid example. Remove private conversation content before sharing.
 

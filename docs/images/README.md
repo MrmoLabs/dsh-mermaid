@@ -2,11 +2,10 @@
 
 - `conversation-en.jpg`: the Mermaid card inside a DSH conversation.
 - `fullscreen-en.jpg`: the same diagram in the plugin's fullscreen viewer.
+- `render-settings-zh-CN.png`: the Mermaid rendering-style settings page in Simplified Chinese.
 
-Both images are real browser captures of dsh-mermaid 0.4.4 running in an isolated DSH Web 0.2.1-rc.3 environment on 2026-10-28. The interface and diagram labels use English with the light theme. The conversation image is cropped to 1298 × 650 pixels and the fullscreen image to 1298 × 760 pixels; plugin styles and controls are unchanged.
+The conversation and fullscreen images show dsh-mermaid 0.4.4 in DSH Web 0.2.1-rc.3 on 2026-10-28, with English labels and the light theme. The settings image shows the unreleased rendering-style feature in DSH Web 0.2.2-rc.3 on 2026-11-16.
 
-The conversation uses a local documentation fixture without a model request or private conversation data. Its diagram source is in [pull-request-workflow.mmd](../examples/pull-request-workflow.mmd).
+All images are real application captures using sample content in isolated profiles. The conversation's diagram source is in [pull-request-workflow.mmd](../examples/pull-request-workflow.mmd).
 
-The DSH host ran on Node.js 24.21.0 bundled with DSH Desktop. The README records this session as a UI smoke check covering English flowchart rendering, toolbar display, opening and closing fullscreen, and fullscreen panning.
-
-`render-settings-zh-CN.png` is a real 1280 × 900 capture of the native plugin configuration page in an isolated DSH Web 0.2.2-rc.3 profile on 2026-11-16, using Chrome 157.0.8103.78. It shows the unreleased local Mermaid settings implementation, Simplified Chinese labels, staged-example controls, common color fields and the advanced JSON entry. No model request or private user profile was used.
+For current features and tested environments, see the main [README](../../README.md#compatibility).

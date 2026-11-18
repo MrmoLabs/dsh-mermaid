@@ -28,7 +28,9 @@ dsh plugin --profile web add -w dsh-mermaid
 npx.cmd --yes @deepseek-ai/dsh plugin --profile web add -w dsh-mermaid
 ```
 
-使用 **DSH Desktop** 时，将 `--profile web` 替换为 `--profile desktop`。DSH 会通过 pnpm 安装包，并根据包内的 `dsh.bundle` 声明自动注册到所选 profile。安装后重启 DSH Web 或 DSH Desktop；已经打开的 Web 页面也请刷新。
+使用 **DSH Desktop** 时，请使用 Desktop 安装包随附的 `dsh` 命令，并将 `--profile web` 替换为 `--profile desktop`。当前 Desktop 版本的 `desktop` profile 不能通过 npm/npx 版 DSH CLI 管理。Windows 用户若未配置 PATH，可直接调用 `<DSH Desktop 安装目录>\resources\runtime\cli\bin\dsh.cmd`。
+
+DSH 会通过 pnpm 安装包，并根据包内的 `dsh.bundle` 声明自动注册到所选 profile。安装后重启 DSH Web 或 DSH Desktop；已经打开的 Web 页面也请刷新。
 
 ### 2. 生成图表
 
@@ -64,7 +66,7 @@ flowchart LR
 
 不配置时保持 `auto` 配色与 `classic` 绘图风格。配色支持 `auto`（跟随 DSH）、`default`、`dark`、`neutral`、`forest`、`base`（自定义）；绘图风格独立支持 `classic` 和 `handDrawn`。手绘在流程图、状态图上已确认有笔触变化，其他类型可能没有明显效果。
 
-在 **DSH 0.2.2-rc.3 / Windows Web** 隔离 profile 中已验证以下操作：
+以下操作已在 **DSH 0.2.2-rc.3 的 Windows Web 和 Desktop** 中验证：
 
 ### 推荐：原生设置表单
 
@@ -85,7 +87,7 @@ flowchart LR
 
 ### 进阶：编辑 profile 文件
 
-1. 找到当前 profile 的用户层文件 `%USERPROFILE%\.dsh\profiles\web\cordis.patch.yml`；设置了 `DSH_HOME` 时，根目录改为该变量的值。Desktop 的 profile 名通常为 `desktop`，但本次未验收原生窗口。
+1. 找到当前 profile 的用户层文件 `%USERPROFILE%\.dsh\profiles\web\cordis.patch.yml`；设置了 `DSH_HOME` 时，根目录改为该变量的值。Desktop 用户将路径中的 `web` 替换为 `desktop`。
 2. 在文件中修改现有 `id: ui-mermaid` 覆盖行的 `config`。如果文件尚无该行，添加下面这个 **id 定位的覆盖项**，它修改安装包已注册的插件，不使用 `insert` 再安装一次。保留文件中其他插件和覆盖项；不要修改 `node_modules` 内的配置或 bundle。
 
 ```yaml
@@ -132,7 +134,7 @@ dsh plugin --profile web update -w dsh-mermaid
 dsh plugin --profile web remove -w dsh-mermaid
 ```
 
-如需通过 npx 调用，将开头的 `dsh` 替换为 `npx.cmd --yes @deepseek-ai/dsh`。操作完成后重启对应的 DSH 应用，并刷新已打开的 Web 页面。版本变化见[更新日志](CHANGELOG.md)。
+Web 用户可将开头的 `dsh` 替换为 `npx.cmd --yes @deepseek-ai/dsh`；Desktop 用户应使用其随附的 `dsh` 命令。操作完成后重启对应的 DSH 应用，并刷新已打开的 Web 页面。替换插件会保留已保存的 profile 设置；刷新前请先复制或下载需要保留的图表草稿。版本变化见[更新日志](CHANGELOG.md)。
 
 ## 常见问题
 
@@ -146,9 +148,17 @@ dsh plugin --profile web remove -w dsh-mermaid
 
 ## 兼容性
 
-最近一次界面验证于 **2026-10-28** 完成：Windows / Chrome、`@deepseek-ai/dsh 0.2.1-rc.3`（Web profile）、`dsh-mermaid 0.4.4`，DSH 宿主使用 Desktop 随附的 Node.js 24.21.0。
+当前**尚未发布的源码**于 **2026-11-17** 完成以下验证：
 
-本次使用独立环境中的本地示例会话，确认了英文流程图渲染、工具栏显示、全屏打开与关闭，以及全屏拖拽；上方截图来自该环境。这是界面冒烟验证，未覆盖全部功能回归或 Desktop 原生窗口。
+| 环境 | DSH 版本 | 已验证功能 |
+| --- | --- | --- |
+| Windows Web / Chrome | `0.2.1-rc.2`、Desktop 随附的 `0.2.2-rc.3` | 八类图表、设置保存与重载、全屏、SVG 导出及包升级。 |
+| Windows Desktop 原生窗口 | `0.2.2-rc.3` | 流程图渲染与编辑、设置保存、全屏、原生 SVG 保存及包升级。 |
+| Linux x64 Web 宿主 / Windows Chrome | `0.2.1-rc.2` | 八类图表、设置保存与重载、全屏、SVG 导出及包升级。 |
+
+从 npm `0.4.5` 升级到当前构建后，已保存的渲染设置和其他 profile 覆盖项均保留。Linux 宿主使用 Debian 容器与 Node.js 24.22.3；未验证 Linux 原生浏览器或 macOS。
+
+固定主题与宿主背景相反，或 `base` 明暗变量未配齐时，部分文字可能难以辨认。需要自动跟随宿主明暗模式时，建议使用 `auto`；自定义配色请检查浅色、深色两个变量分支。上方旧截图仍来自 2026-10-28 的 Web 验证。这些结果针对源码版，不代表已发布新 npm 版本。
 
 DSH 仍处于开发预览阶段，新版可能调整插件加载器或 Markdown DOM。[反馈问题](https://github.com/MrmoLabs/dsh-mermaid/issues)时，请附上 DSH、插件和 Node.js 版本、Web / Desktop profile，以及最小 Mermaid 示例；分享前请移除会话中的私人内容。
 

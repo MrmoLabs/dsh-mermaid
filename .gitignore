@@ -5,3 +5,9 @@ lib/
 *.tgz
 *.log
 .DS_Store
+
+# Local design notes and development acceptance records
+/DESIGN_Issue5_RenderStyles.md
+/DESIGN_Issue6_TooltipOverflow.md
+/docs/ISSUE5_ACCEPTANCE.md
+/docs/COMPATIBILITY_UPGRADE_ACCEPTANCE.md

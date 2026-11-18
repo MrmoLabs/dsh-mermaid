@@ -4,15 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-- Preserve single-line and multiline init directives when retrying flowchart labels with unquoted parentheses. Remap complete SVG CSS IDs and fragment URLs in fullscreen clones so shared prefixes do not break gradient borders or change color values.
-- Preserve original fields and variables while repairing invalid saved settings, and prevent silent removal of unsupported structures. Compare drafts by actual configuration values to avoid unnecessary saves and leave prompts; preserve explicit null diagnostics through the host schema. Separate base color from flowchart node fill and explain advanced overrides.
-- Add a native Mermaid settings form on the installed bundle's Plugins page: theme/look selectors, common color/font controls, three advanced JSON groups, a staged Indigo/Slate example, restore/discard actions, revision conflicts and save readback. Settings drafts survive panel navigation; unsaved edits protect refresh/close. Saving uses DSH's authenticated settings service and the same profile configuration.
-- Add profile-owned global Mermaid color themes and independent classic/hand-drawn looks, with bounded configuration validation, deep-merged light/dark variables, a read-only no-store endpoint and lazy per-mount configuration snapshots. Invalid or unavailable settings retain a separate configuration warning while default rendering remains usable.
-- Fix theme/source rendering races with immediate task invalidation and source-plus-style cache identity. Keep fullscreen viewport state during updates and disable stale SVG actions; recognize indented frontmatter and multiline init directives consistently in detection, titles and filenames.
-- Bundle the Node host independently from the browser runtime and document the verified Windows Web profile configuration workflow. Linux and Desktop native-window acceptance remain pending; no version or release change.
-- Add a card-local Mermaid editor with a debounced live preview. The draft never writes back to the conversation; Copy and Download .mmd preserve the raw source, Reset restores the message source, and the last successful diagram is kept while the draft is invalid or rendering.
-- Keep an initially invalid block editable, preserve the draft across view changes and message updates, and disable fullscreen/SVG export while the preview is stale.
-- Pause pending and queued previews during IME composition, mark stale previews while waiting to render, and restore the rendered announcement when reusing a cached diagram. Roll back failed SVG bindings so Reset and export keep the last successful diagram.
+- Add an inline Mermaid editor with a debounced live preview. Drafts stay on the current page; Copy and Download .mmd preserve the raw draft, and Reset restores the original message source.
+- Keep invalid diagrams editable and retain the last successful preview while a draft is invalid or rendering. Disable fullscreen and SVG export until the preview matches the draft.
+- Add global color themes, independent classic/hand-drawn looks, and custom light/dark color and font settings saved in the DSH profile. Per-diagram Mermaid configuration can override the defaults.
+- Add a rendering-style form on the plugin's Plugins page, with common controls, advanced JSON variables, an Indigo/Slate example, restore/discard actions and save-conflict handling. Settings drafts survive panel navigation.
+- Preserve existing colors and variables when repairing invalid settings, and avoid unnecessary save prompts. Base color and node fill can be adjusted independently.
+- Fix preview updates during IME composition and rapid source/theme changes. Preserve fullscreen zoom during updates and keep Reset/export working after a failed preview update.
+- Preserve init directives when recovering flowchart labels with unquoted parentheses, and fix gradient borders in fullscreen diagrams.
+- Update Web/Desktop compatibility, installation and upgrade guidance, including saved-profile preservation and fixed-theme contrast limitations.
 
 ## [0.4.5] - 2026-11-06
 
