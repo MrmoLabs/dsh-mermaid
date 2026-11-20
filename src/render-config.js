@@ -129,7 +129,10 @@ function effectiveStyle(style, dark) {
   const result = { theme: style.theme === 'auto' ? (dark ? 'dark' : 'default') : style.theme, look: style.look };
   if (style.theme === 'base') {
     result.themeVariables = mergeVariables(style.themeVariables.common, style.themeVariables[dark ? 'dark' : 'light']);
-    if (!Object.hasOwn(result.themeVariables, 'darkMode')) result.themeVariables.darkMode = dark;
+    // Mermaid's stock base fills are light, including when darkMode is enabled.
+    if (!Object.hasOwn(result.themeVariables, 'darkMode')) {
+      result.themeVariables.darkMode = dark && Object.keys(result.themeVariables).length > 0;
+    }
   }
   return deepFreeze(result);
 }

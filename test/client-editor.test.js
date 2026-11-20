@@ -142,7 +142,7 @@ test('Copy and .mmd keep the raw draft, and SVG download is disabled while stale
     assert.equal(card.querySelector('[role="status"]')?.textContent, '源码已复制。');
 
     sourceActions[1].click();
-    assert.equal(state.downloadedName, 'mermaid-flowchart.mmd');
+    assert.match(state.downloadedName, /^mermaid-flowchart-[a-f0-9]{8}\.mmd$/);
     const downloaded = await state.objectUrls.at(-1).text();
     assert.equal(downloaded, raw);
 
@@ -163,6 +163,8 @@ test('an initially invalid block is editable and recovers', async () => {
   try {
     await waitFor(harness, () => document.querySelector('.dsh-mmd[data-state="error"]'));
     const card = document.querySelector('.dsh-mmd');
+    assert.equal(card.dataset.view, 'diagram');
+    card.querySelector('[data-view="edit"]').click();
     assert.equal(card.dataset.view, 'edit');
     const editor = card.querySelector('.dsh-mmd-textarea');
     assert.equal(editor.value, 'flowchart LR\nA-->');
@@ -179,31 +181,39 @@ test('an initially invalid block is editable and recovers', async () => {
 
 test('PNG export downloads once and discards results from a superseded preview', async () => {
   let complete;
-  let calls = 0;
+  const backgrounds = [];
   const harness = await createClientHarness({
-    rasterizeSvg: () => {
-      calls += 1;
+    rasterizeSvg: (_svg, background) => {
+      backgrounds.push(background);
       return new Promise((resolve) => { complete = resolve; });
     },
   });
   try {
     const { card } = await openEditor(harness);
-    const pngButton = [...card.querySelectorAll('.dsh-mmd-export-list button')].find((button) => button.textContent === '下载 PNG');
+    const [, pngButton, themedButton] = card.querySelectorAll('.dsh-mmd-export-list button');
     const image = new Blob(['synthetic png'], { type: 'image/png' });
     pngButton.click();
     pngButton.click();
-    assert.equal(calls, 1);
+    assert.deepEqual(backgrounds, [null]);
     assert.equal(pngButton.disabled, true);
+    assert.equal(themedButton.disabled, true);
     complete(image);
     await waitFor(harness, () => !pngButton.disabled);
-    assert.equal(harness.state.downloadedName, 'mermaid-flowchart.png');
+    const transparentName = harness.state.downloadedName;
+    assert.match(transparentName, /^mermaid-flowchart-[a-f0-9]{8}\.png$/);
     assert.equal(harness.state.objectUrls[0], image);
+
+    themedButton.click();
+    assert.deepEqual(backgrounds, [null, '#fff']);
+    complete(image);
+    await waitFor(harness, () => !themedButton.disabled);
+    assert.equal(harness.state.downloadedName, transparentName.replace('.png', '-background.png'));
 
     pngButton.click();
     setDraft(harness, card, 'flowchart LR\nA-->NEW');
     complete(image);
     await waitFor(harness, () => !pngButton.disabled);
-    assert.equal(harness.state.objectUrls.length, 1);
+    assert.equal(harness.state.objectUrls.length, 2);
   } finally {
     await harness.cleanup();
   }

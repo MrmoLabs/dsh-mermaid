@@ -20,6 +20,9 @@ test('browser bundle registers dsh-mermaid and its real runtime respects the doc
   assert.ok(runtime.length > 1_000_000, 'the separately bundled Mermaid runtime is missing');
   assert.match(bundle, /\/dsh-mermaid\/mermaid-runtime\.js\?rev=/);
   assert.ok(bundle.includes(runtimeRevision), 'client bootstrap has a stale runtime revision');
+  const cardCss = await readFile('lib/card.css');
+  const styleRevision = createHash('sha256').update(cardCss).digest('hex').slice(0, 12);
+  assert.ok(bundle.includes(`/dsh-mermaid/card.css?rev=${styleRevision}`));
   const settings = await readFile('lib/settings-runtime.js');
   const settingsRevision = createHash('sha256').update(settings).digest('hex').slice(0, 12);
   assert.ok(bundle.includes(settingsRevision), 'native settings asset must be content-versioned independently');
@@ -37,6 +40,14 @@ test('browser bundle registers dsh-mermaid and its real runtime respects the doc
   let runtimeStatus;
   await routes.get(host.RUNTIME_PATH).handler({ method: 'HEAD' }, { writeHead(status) { runtimeStatus = status; }, end() {} });
   assert.equal(runtimeStatus, 200, 'built host must resolve its runtime alongside itself');
+  let styleType;
+  let styleBody;
+  await routes.get(host.STYLE_PATH).handler({ method: 'GET' }, {
+    writeHead(status, headers) { assert.equal(status, 200); styleType = headers['content-type']; },
+    end(body) { styleBody = body; },
+  });
+  assert.equal(styleType, 'text/css; charset=utf-8');
+  assert.deepEqual(styleBody, cardCss);
   for (const cleanup of cleanups.reverse()) cleanup?.();
 
   let registration;

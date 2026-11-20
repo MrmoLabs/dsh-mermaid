@@ -11,6 +11,28 @@ async function waitFor(harness, condition) {
   }
 }
 
+test('groups repeated diagnostics for the same target without copying source', async () => {
+  const failure = 'private Mermaid input';
+  const harness = await createClientHarness({
+    initialSource: 'flowchart LR\nA[private source]-->B',
+    renderRuntime() { throw new Error(failure); },
+  });
+  try {
+    let copied;
+    Object.defineProperty(harness.window.navigator, 'clipboard', { value: { writeText(text) { copied = text; } } });
+    const card = () => harness.document.querySelector('.dsh-mmd');
+    await waitFor(harness, () => card()?.dataset.state === 'error');
+    card().querySelector('.dsh-mmd-retry').click();
+    await waitFor(harness, () => card()?.dataset.state === 'error');
+    card().querySelector('.dsh-mmd-diagnostics').click();
+    assert.equal(JSON.parse(copied).retryAttempts, 1);
+    assert.deepEqual(JSON.parse(copied).failures, [{ stage: 'render', outcome: 'runtimeRenderFailed', occurrences: 2 }]);
+    assert.doesNotMatch(copied, /private/);
+  } finally {
+    await harness.cleanup();
+  }
+});
+
 function diagramActions(card) {
   return card.querySelectorAll('.dsh-mmd-diagram-action');
 }
@@ -38,15 +60,16 @@ test('view controls work before the first runtime import', async () => {
 });
 
 test('retries a failed runtime import without changing source or view', async () => {
-  let loads = 0;
+  const loads = [];
   const moduleSource = `export default { initialize() {} };
     export async function renderMermaid(id, source) {
       return { svg: '<svg><text>' + source + '</text></svg>' };
     }`;
   const hooks = registerHooks({
     resolve(specifier, context, nextResolve) {
-      if (specifier !== '/dsh-mermaid/mermaid-runtime.js?rev=development') return nextResolve(specifier, context);
-      if (++loads === 1) throw new Error('synthetic runtime load failure');
+      if (!specifier.startsWith('/dsh-mermaid/mermaid-runtime.js?rev=development')) return nextResolve(specifier, context);
+      loads.push(specifier);
+      if (loads.length === 1) throw new Error('synthetic runtime load failure');
       return { url: 'data:text/javascript,' + encodeURIComponent(moduleSource), shortCircuit: true };
     },
   });
@@ -73,7 +96,7 @@ test('retries a failed runtime import without changing source or view', async ()
     assert.equal(document.activeElement, codeButton);
     assert.equal(retry.hidden, true);
     await waitFor(harness, () => card.dataset.state === 'ok');
-    assert.equal(loads, 2);
+    assert.deepEqual(loads, ['/dsh-mermaid/mermaid-runtime.js?rev=development', '/dsh-mermaid/mermaid-runtime.js?rev=development&retry=1']);
     assert.equal(card.querySelector('.dsh-mmd-code').textContent, code.textContent);
     assert.equal(card.querySelector('svg text').textContent, code.textContent);
     diagramButton.click();
@@ -115,6 +138,31 @@ test('reports an empty rendered diagram and keeps its source editable', async ()
     assert.equal(pane.dataset.state, 'stale');
     assert.equal(card.querySelector('.dsh-mmd-notice').textContent, 'The diagram is empty. The last successful preview is still shown.');
     assert.ok([...diagramActions(card)].every((button) => button.disabled));
+  } finally { await harness.cleanup(); }
+});
+
+test('a legacy incomplete fence stays in Diagram and can be inspected or completed', async () => {
+  const harness = await createClientHarness({ initialSource: '\nflowchart LR\nA-->', incompleteSource: true });
+  try {
+    const { code, document } = harness;
+    await waitFor(harness, () => document.querySelector('.dsh-mmd[data-state="pending"]'));
+    const card = document.querySelector('.dsh-mmd');
+    assert.equal(card.dataset.view, 'diagram');
+    assert.match(card.querySelector('.dsh-mmd-pane').textContent, /尚未写完/);
+    assert.equal(card.querySelector('.dsh-mmd-error-details').hidden, true);
+    code.textContent += 'B';
+    await waitFor(harness, () => card.dataset.state === 'ok');
+    assert.equal(card.dataset.view, 'diagram');
+
+    code.textContent = '\nflowchart LR\nA-->';
+    await waitFor(harness, () => card.dataset.state === 'pending');
+    card.querySelector('[data-view="edit"]').click();
+    await waitFor(harness, () => card.dataset.state === 'error');
+    assert.match(card.querySelector('.dsh-mmd-notice').textContent, /第 3 行/);
+    const details = card.querySelector('.dsh-mmd-error-details');
+    assert.equal(details.hidden, false);
+    assert.equal(details.open, false);
+    assert.equal(details.querySelector('pre').textContent, 'synthetic Mermaid failure');
   } finally { await harness.cleanup(); }
 });
 

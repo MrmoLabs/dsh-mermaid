@@ -1,6 +1,8 @@
 import { svgDimensions } from './svg.js';
 
-function createInlinePreview(pane) {
+const INTERACTIVE = 'a,button,input,select,textarea,[role="button"]';
+
+function createInlinePreview(pane, onZoom, onResize) {
   let scale = 1;
   let pointer = null;
 
@@ -18,15 +20,17 @@ function createInlinePreview(pane) {
     refreshOverflow();
   }
 
-  function zoom(nextScale) {
+  function zoom(nextScale, anchorX = pane.clientWidth / 2, anchorY = pane.clientHeight / 2, fit = false) {
     const svg = pane.querySelector('svg');
     if (!svg) return;
-    const centerX = (pane.scrollLeft + pane.clientWidth / 2) / (pane.scrollWidth || 1);
-    const centerY = (pane.scrollTop + pane.clientHeight / 2) / (pane.scrollHeight || 1);
+    const centerX = (pane.scrollLeft + anchorX) / (pane.scrollWidth || 1);
+    const centerY = (pane.scrollTop + anchorY) / (pane.scrollHeight || 1);
     scale = Math.max(0.5, Math.min(8, nextScale));
+    if (fit) pane.setAttribute('data-fit', '');
     update(svg);
-    pane.scrollLeft = scale === 1 ? 0 : centerX * pane.scrollWidth - pane.clientWidth / 2;
-    pane.scrollTop = scale === 1 ? 0 : centerY * pane.scrollHeight - pane.clientHeight / 2;
+    pane.scrollLeft = scale === 1 ? 0 : centerX * pane.scrollWidth - anchorX;
+    pane.scrollTop = scale === 1 ? 0 : centerY * pane.scrollHeight - anchorY;
+    onZoom?.();
   }
 
   function stop(event) {
@@ -35,9 +39,15 @@ function createInlinePreview(pane) {
     pane.removeAttribute('data-dragging');
   }
 
+  pane.addEventListener('dblclick', (event) => {
+    if (event.target.closest?.(INTERACTIVE)) return;
+    const bounds = pane.getBoundingClientRect();
+    if (scale === 1) zoom(2, event.clientX - bounds.left, event.clientY - bounds.top);
+    else zoom(1, undefined, undefined, true);
+  });
   pane.addEventListener('pointerdown', (event) => {
     if (pointer || event.button !== 0 || !event.isPrimary || event.pointerType === 'touch') return;
-    if (!pane.hasAttribute('data-pannable') || event.target.closest?.('a,button,input,select,textarea,[role="button"]')) return;
+    if (!pane.hasAttribute('data-pannable') || event.target.closest?.(INTERACTIVE)) return;
     pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, left: pane.scrollLeft, top: pane.scrollTop };
   });
   pane.addEventListener('pointermove', (event) => {
@@ -58,11 +68,15 @@ function createInlinePreview(pane) {
   });
   for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) pane.addEventListener(type, stop);
 
-  const observer = new pane.ownerDocument.defaultView.ResizeObserver(refreshOverflow);
+  const observer = new pane.ownerDocument.defaultView.ResizeObserver(() => {
+    onResize?.();
+    refreshOverflow();
+  });
   observer.observe(pane);
   return {
     get scale() { return scale; },
     zoom,
+    fit() { zoom(1, undefined, undefined, true); },
     update,
     dispose() { observer.disconnect(); },
   };

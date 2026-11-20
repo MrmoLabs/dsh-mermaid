@@ -1,3 +1,5 @@
+import { isMermaidSource } from './detection.js';
+
 const FENCE_SLOT = 'conversation.chat.markdown.fence';
 const FENCE_SELECTOR = `[data-slot="${FENCE_SLOT}"]`;
 const FENCE_LANGUAGES = ['mermaid', 'mermaidjs', 'mmd'];
@@ -28,6 +30,11 @@ function registerNativeFences(ctx, hostRequire, updateCard, setActive) {
     child.effect(() => child.slots.inject(FENCE_SLOT, () => {
       const disposers = [];
       try {
+        // The host also dispatches unlabelled fences through the same outlet.
+        // The specific layers below replace this wildcard for explicit Mermaid.
+        disposers.push(child.slots.register({ name: FENCE_SLOT, id: 'dsh-mermaid/fence' },
+          (props) => !props.lang && isMermaidSource(props.code)
+            ? React.createElement(MermaidFence, props) : props.children));
         for (const key of FENCE_LANGUAGES) {
           disposers.push(child.slots.register({ name: FENCE_SLOT, key, id: 'dsh-mermaid/fence' }, MermaidFence));
         }

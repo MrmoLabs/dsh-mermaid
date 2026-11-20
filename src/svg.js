@@ -41,14 +41,33 @@ function serializeSvg(svg) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n${xml}`;
 }
 
+const GRAPHICS = 'circle, ellipse, foreignObject, image, line, path, polygon, polyline, rect, text, use';
+
+function isContentGraphic(element) {
+  return !element.closest('defs, marker, clipPath, mask, pattern, symbol') &&
+    (element.localName !== 'text' || Boolean(element.textContent.trim()));
+}
+
 function hasSvgContent(svg) {
-  // Mermaid can return a root SVG with only styles, definitions and empty groups.
-  const graphics = 'circle, ellipse, foreignObject, image, line, path, polygon, polyline, rect, text, use';
-  for (const element of svg.querySelectorAll(graphics)) {
-    if (element.closest('defs, marker, clipPath, mask, pattern, symbol')) continue;
-    if (element.localName !== 'text' || element.textContent.trim()) return true;
+  return Array.from(svg.querySelectorAll(GRAPHICS)).some(isContentGraphic);
+}
+
+function isVisibleGraphic(element, svg, window) {
+  if (!isContentGraphic(element)) return false;
+  const style = window.getComputedStyle(element);
+  if (style.visibility === 'hidden' || style.visibility === 'collapse' || style.display === 'none' || style.opacity === '0') return false;
+  for (let parent = element.parentElement; parent && parent !== svg; parent = parent.parentElement) {
+    const container = window.getComputedStyle(parent);
+    if (container.display === 'none' || container.opacity === '0') return false;
   }
-  return false;
+  const { width, height } = element.getBBox();
+  const hasArea = width > 0 && height > 0;
+  if (['foreignObject', 'image', 'use'].includes(element.localName)) return hasArea;
+  const hasStroke = style.stroke !== 'none' && style.strokeOpacity !== '0' && Number.parseFloat(style.strokeWidth) !== 0;
+  const hasFill = style.fill !== 'none' && style.fillOpacity !== '0';
+  if (hasArea) return hasStroke || hasFill;
+  return (width > 0 || height > 0) && ['line', 'path', 'polyline'].includes(element.localName) &&
+    (hasStroke || [style.markerStart, style.markerMid, style.markerEnd].some((marker) => marker && marker !== 'none'));
 }
 
 function ensureSvgAccessibility(svg, titleText) {
@@ -85,11 +104,19 @@ function svgDimensions(svg) {
 
 function prepareSvgPreview(svg, type) {
   const view = svg.viewBox?.baseVal;
-  if (!view || view.width <= 0 || view.height <= 0 || !svg.getClientRects().length) return true;
+  if (!svg.getClientRects().length || !view) return true;
+  if (svg.hasAttribute('viewBox') && (view.width === 0 || view.height === 0)) {
+    const dimensions = svg.getAttribute('viewBox').trim().split(/[\s,]+/).map(Number);
+    if (dimensions.length === 4 && dimensions.every(Number.isFinite) &&
+        (dimensions[2] === 0 || dimensions[3] === 0)) return false;
+  }
+  if (view.width <= 0 || view.height <= 0) return true;
   try {
     const { x, y, width, height } = svg.getBBox();
     if (![x, y, width, height].every(Number.isFinite)) return true;
     if (!width && !height) return false;
+    const window = svg.ownerDocument.defaultView;
+    if (!Array.from(svg.querySelectorAll(GRAPHICS)).some((element) => isVisibleGraphic(element, svg, window))) return false;
     if (type !== 'gantt' && type !== 'journey') return true;
     const left = Math.min(view.x, x);
     const top = Math.min(view.y, y);

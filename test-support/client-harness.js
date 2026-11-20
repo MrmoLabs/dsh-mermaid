@@ -11,7 +11,7 @@ class SyntheticSourceError extends Error {}
 
 async function createClientHarness({
   initialSource = 'flowchart LR\nA-->B', locale = 'zh-CN', bindFunctions, injectRuntime = true,
-  config, fetchConfig, initializeRuntime, renderRuntime, rasterizeSvg,
+  config, fetchConfig, initializeRuntime, renderRuntime, rasterizeSvg, incompleteSource = false,
 } = {}) {
   const window = new Window({ url: 'http://localhost/' });
   const previousGlobals = new Map();
@@ -79,7 +79,9 @@ async function createClientHarness({
       state.maxActiveRenders = Math.max(state.maxActiveRenders, activeRenders);
       try {
         if (renderRuntime) return await renderRuntime(_id, source);
-        if (source.endsWith('-->')) throw new SyntheticSourceError('synthetic Mermaid failure');
+        if (source.endsWith('-->')) {
+          throw Object.assign(new SyntheticSourceError('synthetic Mermaid failure'), incompleteSource && { incomplete: true, line: 2 });
+        }
         if (source === 'flowchart LR') return { svg: '<svg><title>Flowchart</title><defs><marker><path d="M0 0L1 1"/></marker></defs><g></g></svg>' };
         if (source.includes('SLOW')) {
           return await new Promise((resolve, reject) => {

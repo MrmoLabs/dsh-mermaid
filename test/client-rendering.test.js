@@ -32,7 +32,7 @@ test('renders localized accessible cards and recovers from errors', async () => 
     const exportMenu = fileActions.querySelector('.dsh-mmd-export-list');
     assert.equal(svgButton.parentElement, exportMenu);
     assert.equal(exportMenu.getAttribute('popover'), 'auto');
-    assert.deepEqual([...exportMenu.children].map((button) => button.textContent), ['下载 SVG', '下载 PNG', '下载 .mmd']);
+    assert.deepEqual([...exportMenu.children].map((button) => button.textContent), ['下载 SVG', '下载 PNG', '下载 PNG（主题背景）', '下载 .mmd']);
     assert.equal(svgButton.disabled, false);
     assert.equal(window.getComputedStyle(fullscreenButton.closest('.dsh-mmd-preview')).display, 'none');
     assert.equal(card.querySelector('.dsh-mmd-feedback').parentElement, card);
@@ -65,16 +65,17 @@ test('renders localized accessible cards and recovers from errors', async () => 
     await wait(1_100);
     const invalidCard = invalid.pre.previousElementSibling;
     assert.equal(invalidCard?.dataset.state, 'error');
-    assert.equal(invalidCard?.dataset.view, 'edit');
+    assert.equal(invalidCard?.dataset.view, 'diagram');
     assert.match(invalidCard?.querySelector('.dsh-mmd-error')?.textContent || '', /渲染失败/);
     assert.equal(invalidCard?.querySelector('.dsh-mmd-retry').hidden, true);
     assert.equal(invalidCard?.querySelector('.dsh-mmd-error-actions').hidden, false);
-    assert.equal(invalidCard?.querySelector('.dsh-mmd-preview .dsh-mmd-error')?.parentElement.className, 'dsh-mmd-feedback');
-    assert.equal(invalidCard?.querySelector('[role="status"]')?.textContent, '图表渲染失败，已显示源代码。');
+    assert.equal(invalidCard?.querySelector('[role="status"]')?.textContent, '图表渲染失败。可打开编辑检查源码。');
     const invalidViewControls = invalidCard?.querySelectorAll('.dsh-mmd-view-control') || [];
     assert.equal(invalidViewControls[0].hidden, false);
     assert.equal(invalidViewControls[1].hidden, false);
     assert.equal(invalidViewControls[2].hidden, false);
+    invalidViewControls[2].click();
+    assert.equal(invalidCard?.querySelector('.dsh-mmd-preview .dsh-mmd-error')?.parentElement.className, 'dsh-mmd-feedback');
     assert.equal(invalidCard?.querySelector('.dsh-mmd-textarea')?.value, 'flowchart LR\nA-->');
 
     invalid.code.textContent = 'flowchart LR\nA-->RECOVERED';

@@ -12,9 +12,18 @@ const FLOWCHART_TOKEN = /"[^"]*"|%%[^\r\n]*|@\{(?:[^"{}]|"[^"]*")*\}|(?:-->|---|
 const PLAIN_PARENTHESIZED_LABEL = /^(?:[^()]*\([^()]*\))+[^()]*$/;
 
 class MermaidSourceError extends Error {
-  constructor(error) {
-    super(error?.message || String(error), { cause: error });
+  constructor(error, diagnostic = error) {
+    super(diagnostic?.message || String(diagnostic), { cause: error });
     this.hash = error?.hash;
+    const hash = diagnostic?.hash;
+    const parserError = diagnostic?.result?.parserErrors?.[0];
+    const token = hash?.token ?? parserError?.token?.tokenType?.name;
+    this.incomplete = token === 'EOF' || token === 1;
+    this.reason = this.incomplete ? 'syntaxIncomplete'
+      : token === 'STR' ? 'syntaxQuote' : token === 'PS' && hash?.text === '(' ? 'syntaxParenthesis' : 'syntaxInvalid';
+    const line = hash?.loc?.first_line ?? parserError?.token?.startLine
+      ?? Number(this.message.match(/\b(?:parse error on )?line (\d+)\b/i)?.[1]);
+    if (Number.isSafeInteger(line) && line > 0) this.line = line;
   }
 }
 
@@ -51,8 +60,8 @@ function normalizeFlowchartLabels(source, token) {
       if (!nodeLabel || /^\s*"/.test(label) || label.includes('%')) return match;
       return match.replaceAll('"', '#quot;');
     }
-    if (/["\r\n]/.test(label) || !PLAIN_PARENTHESIZED_LABEL.test(label)) return match;
-    return `${match.slice(0, -label.length - 1)}"${label}"${match.at(-1)}`;
+    if (/^\s*"/.test(label) || /[\r\n]/.test(label) || !PLAIN_PARENTHESIZED_LABEL.test(label)) return match;
+    return `${match.slice(0, -label.length - 1)}"${label.replaceAll('"', '#quot;')}"${match.at(-1)}`;
   });
 }
 
@@ -72,33 +81,45 @@ function recoverFlowchartSource(source, error) {
   return normalized.length <= mermaid.mermaidAPI.getConfig().maxTextSize ? normalized : null;
 }
 
-async function renderInContainer(id, source) {
+async function renderInContainer(id, source, signal) {
+  signal?.throwIfAborted();
   const container = document.createElement('div');
   container.setAttribute('aria-hidden', 'true');
   container.style.cssText = 'position:absolute;inset:0 auto auto 0;width:100%;height:0;overflow:hidden;visibility:hidden;pointer-events:none';
   document.body.append(container);
+  const cleanup = () => container.remove();
+  signal?.addEventListener('abort', cleanup, { once: true });
   try {
     return await mermaid.render(id, source, container);
   } finally {
-    container.remove();
+    signal?.removeEventListener('abort', cleanup);
+    cleanup();
   }
 }
 
-async function renderMermaid(id, source) {
-  try {
-    return await renderInContainer(id, source);
-  } catch (error) {
-    const normalized = recoverFlowchartSource(source, error);
-    if (normalized) {
-      try {
-        return await renderInContainer(id, normalized);
-      } catch (retryError) {
-        // Keep the original syntax diagnostic unless the repaired input failed to draw.
-        if (!await isSourceFailure(retryError, normalized)) throw retryError;
+async function renderMermaid(id, source, signal) {
+  let input = source;
+  let firstError;
+  const applied = new Set();
+  while (true) {
+    try {
+      const result = await renderInContainer(id, input, signal);
+      const { theme, themeVariables } = mermaid.mermaidAPI.getConfig();
+      const dark = theme === 'dark' || (theme === 'base' && themeVariables?.darkMode === true);
+      return { ...result, background: dark ? '#000' : '#fff' };
+    } catch (error) {
+      signal?.throwIfAborted();
+      const token = error?.hash?.token;
+      const normalized = !applied.has(token) && recoverFlowchartSource(input, error);
+      if (normalized) {
+        firstError ||= error;
+        applied.add(token);
+        input = normalized;
+        continue;
       }
+      if (await isSourceFailure(error, input)) throw new MermaidSourceError(firstError || error, error);
+      throw error;
     }
-    if (await isSourceFailure(error, source)) throw new MermaidSourceError(error);
-    throw error;
   }
 }
 

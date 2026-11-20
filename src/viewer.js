@@ -61,6 +61,7 @@ function createFullscreenViewer({ t }) {
     const clone = sourceSvg.cloneNode(true);
     rewriteSvgIds(clone);
     const dimensions = svgDimensions(clone);
+    viewer.viewport.style.setProperty('--dsh-mmd-diagram-background', entry.renderedBackground || '');
     clone.setAttribute('width', String(dimensions.width));
     clone.setAttribute('height', String(dimensions.height));
     viewer.stage.replaceChildren(clone);

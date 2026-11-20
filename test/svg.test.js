@@ -7,7 +7,11 @@ test('measures visible SVGs and expands a clipped Journey viewBox', async () => 
   const window = new Window();
   try {
     const svg = window.document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    Object.defineProperty(svg, 'viewBox', { value: { baseVal: { x: 0, y: 0, width: 100, height: 50 } } });
+    const mark = window.document.createElementNS(svg.namespaceURI, 'rect');
+    mark.getBBox = () => svg.getBBox();
+    svg.append(mark);
+    const box = { x: 0, y: 0, width: 100, height: 50 };
+    Object.defineProperty(svg, 'viewBox', { value: { baseVal: box } });
     svg.getClientRects = () => [];
     svg.getBBox = () => ({ x: 0, y: 0, width: 0, height: 0 });
     assert.equal(prepareSvgPreview(svg, 'journey'), true);
@@ -16,6 +20,9 @@ test('measures visible SVGs and expands a clipped Journey viewBox', async () => 
     svg.getBBox = () => ({ x: -12, y: 4, width: 125, height: 28 });
     assert.equal(prepareSvgPreview(svg, 'journey'), true);
     assert.equal(svg.getAttribute('viewBox'), '-12 0 125 50');
+    box.width = 0;
+    svg.setAttribute('viewBox', '0 0 0 50');
+    assert.equal(prepareSvgPreview(svg, 'journey'), false);
   } finally { await window.happyDOM.close(); }
 });
 

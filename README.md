@@ -47,22 +47,25 @@ flowchart LR
 
 The block opens in **Diagram** view by default. Use **Diagram / Code / Edit** at the left of the card header to switch views. The plugin also recognizes `mermaidjs` and `mmd` fences; inline code is left unchanged.
 
-On hosts with the Markdown fence slot, an active reply shows the host's source block until generation finishes. In **Code** view, source updates are shown immediately and the preview updates when you open **Diagram** or **Edit**.
+On hosts with the Markdown fence slot, an active reply shows the host's source block until generation finishes. Unlabelled fences can still be recognized from their Mermaid source. In **Code** view, source updates are shown immediately and the preview updates when you open **Diagram** or **Edit**.
+
+On older hosts, an incomplete code block can stay in **Diagram** while more source arrives. Open **Edit** to check its syntax immediately. Diagram previews are queued when their cards approach the viewport.
 
 ### 3. Edit the source
 
 - **Edit** opens a source panel alongside the diagram preview. On narrow cards the preview moves below the source. Changes re-render after a short debounce, and rendering messages appear in the preview panel.
 - The draft is local to this page and is never written back to the sent message. Refreshing the page or rebuilding the card discards it.
 - While a new source is rendering, or when it has a syntax error, the last successful diagram stays visible with a notice. **Copy source** and **.mmd** always use the raw draft, including comments and whitespace. **Restore original** in the source panel restores the message source.
-- The initial parse error case still opens in **Edit**, so a block that failed to render can be repaired in place.
+- **Edit** remains available on errors. With a host-confirmed final code block, an initial syntax error opens **Edit** automatically.
+- Syntax errors show a line number when Mermaid reports one. Expand **Error details** for the full parser message.
 
 ### 4. Explore and export
 
-- Use **− / Fit card / +** above the preview in **Diagram** and **Edit**. Zooming keeps the card height steady. When the diagram extends beyond the canvas, drag it to pan horizontally or vertically.
+- Wide diagrams open at a readable scale and can overflow the canvas. Use **− / Fit card / +** above the preview in **Diagram** and **Edit**. Double-click the canvas to zoom in or reset to fit. Zooming keeps the card height steady. Drag an overflowing diagram to pan horizontally or vertically.
 - **Fullscreen**, above the preview in **Diagram** and **Edit**, opens a viewer with mouse-wheel zoom, dragging, 100% reset, and fit-to-window controls. Press `Esc` to close it.
-- Open **Export** in the card header to download the entire diagram as SVG or PNG, or the current source as `.mmd`. PNG preserves transparency and uses up to 2× the SVG dimensions, subject to an 8,192-pixel edge and 16-megapixel area limit.
+- Open **Export** in the card header to download the entire diagram as SVG or PNG, or the current source as `.mmd`. The preview, fullscreen view, SVG and background PNG use the diagram palette's white or black background. Transparent PNG is also available. PNG uses up to 2× the SVG dimensions, subject to an 8,192-pixel edge and 16-megapixel area limit. File names include a short suffix derived from the source.
 - Fullscreen, SVG, and PNG require an up-to-date preview. The `.mmd` download remains available while the draft is rendering or contains an error.
-- **Retry rendering** reruns a failed renderer operation on the current source. **Copy diagnostics** copies the diagram type, Mermaid version, stage, and retry count.
+- **Retry rendering** reruns the operation on the current source and uses a fresh module URL after a loading failure. A stalled asynchronous render times out after 15 seconds and the next queued diagram uses a fresh renderer instance. **Copy diagnostics** groups repeated failures for the current source and theme and includes the diagram type, Mermaid version, failure stage, available line number, and retry count.
 
 ![Fullscreen English Mermaid diagram with zoom, reset, fit-to-window, and close controls](docs/images/fullscreen-en.jpg)
 
@@ -145,7 +148,7 @@ For Web, you can replace the leading `dsh` with `npx.cmd --yes @deepseek-ai/dsh`
 | No Code / Diagram / Edit controls | Confirm that the plugin is installed in the profile you are using, restart DSH, and refresh the page. Use an explicit `mermaid` fenced block. |
 | Source appears with an error | Check the Mermaid syntax and the displayed error. Split diagrams that exceed 50,000 characters or 2,000 lines. The **Edit** view remains available for repairs. |
 | Preview says it was not updated | The draft is invalid or still rendering. The previous diagram stays available. Fix the source, wait for the preview to update, or use **Restore original**. |
-| Fullscreen or download is unavailable | These actions require a successfully rendered SVG. Resolve any rendering error first. |
+| Fullscreen or image export is unavailable | These actions require a current preview. The `.mmd` export saves the draft at any time. |
 | GitHub installation reports a blocked build script | Follow the build-script guidance under **Install from GitHub** below. |
 
 ## Compatibility

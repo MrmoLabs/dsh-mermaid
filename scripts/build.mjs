@@ -1,8 +1,11 @@
 import { build } from 'esbuild';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { CSS } from '../src/styles.js';
 
 await mkdir('lib', { recursive: true });
+await writeFile('lib/card.css', CSS);
+const styleRevision = createHash('sha256').update(CSS).digest('hex').slice(0, 12);
 
 await build({
   entryPoints: ['src/mermaid-runtime.js'],
@@ -38,6 +41,7 @@ await build({
     __DSH_MERMAID_RUNTIME_REV__: JSON.stringify(runtimeRevision),
     __DSH_MERMAID_VERSION__: JSON.stringify(mermaidVersion),
     __DSH_MERMAID_SETTINGS_REV__: JSON.stringify(settingsRevision),
+    __DSH_MERMAID_STYLE_REV__: JSON.stringify(styleRevision),
   },
   banner: {
     js: 'window.__ModuleLoader__.load({id:"dsh-mermaid",factory:(require)=>{var module={exports:{}};var exports=module.exports;',

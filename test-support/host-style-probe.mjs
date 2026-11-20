@@ -110,7 +110,20 @@ try {
     'xychart-beta\nx-axis [a,b,c]\ny-axis 0 --> 10\nbar [2,5,8]',
   ];
   await page.evaluate((values) => { for (const source of values) { const pre = document.createElement('pre'); const code = document.createElement('code'); code.className = 'language-mermaid'; code.textContent = source; pre.append(code); document.body.append(pre); } }, sources);
-  await page.waitForFunction(() => document.querySelectorAll('.dsh-mmd[data-state="ok"]').length === 8, { timeout: 30000 });
+  await page.waitForFunction(() => Boolean(document.querySelector('link[href^="/dsh-mermaid/card.css"]')?.sheet));
+  const cards = page.locator('.dsh-mmd');
+  async function renderCards(start, end, fill) {
+    await cards.nth(end - 1).waitFor({ state: 'attached' });
+    for (let index = start; index < end; index++) {
+      await cards.nth(index).scrollIntoViewIfNeeded();
+      await page.waitForFunction(({ index, fill }) => {
+        const card = document.querySelectorAll('.dsh-mmd')[index];
+        return card.dataset.state === 'ok' &&
+          (!fill || [...card.querySelectorAll('.dsh-mmd-pane svg *')].some((node) => getComputedStyle(node).fill === fill));
+      }, { index, fill });
+    }
+  }
+  await renderCards(0, sources.length, 'rgb(224, 231, 255)');
   async function colors() {
     return page.locator('.dsh-mmd-pane svg').evaluateAll((svgs) => svgs.map((svg) => [...svg.querySelectorAll('*')].map((node) => getComputedStyle(node).fill).filter(Boolean)));
   }
@@ -119,9 +132,7 @@ try {
   assert.ok(light.every((fills) => fills.includes('rgb(224, 231, 255)')), 'each diagram must show the light branch color');
   await page.screenshot({ path: join(directory, 'light.png'), fullPage: true });
   await page.evaluate(() => document.body.setAttribute('data-ds-dark-theme', ''));
-  await page.waitForFunction(() => document.querySelectorAll('.dsh-mmd[data-state="ok"]').length === 8 && !document.querySelector('.dsh-mmd[data-state="rendering"]'));
-  // Wait for the style mutation observer and debounce, not only the old ok DOM.
-  await page.waitForTimeout(800);
+  await renderCards(0, sources.length, 'rgb(49, 46, 129)');
   const dark = await colors();
   assert.ok(dark.every((fills) => fills.includes('rgb(49, 46, 129)')), 'each diagram must show the dark branch color');
   await page.screenshot({ path: join(directory, 'dark.png'), fullPage: true });
@@ -192,7 +203,7 @@ try {
       pre.append(code); document.body.append(pre);
     }
   }, recoverySources);
-  await page.waitForFunction((total) => document.querySelectorAll('.dsh-mmd[data-state="ok"]').length === total, recoveryOffset + 3);
+  await renderCards(recoveryOffset, recoveryOffset + recoverySources.length);
   for (let index = 0; index < 2; index++) {
     assert.ok((await page.locator('.dsh-mmd').nth(recoveryOffset + index).locator('.dsh-mmd-pane svg').textContent()).includes('Task(test)'));
   }

@@ -178,6 +178,17 @@ F --> A`;
     await assert.rejects(renderMermaid('broken-link', brokenLink), (error) => error?.hash?.token === 'STR');
     assert.deepEqual(renderCalls.splice(0), [brokenLink, `${escaped}\n F -->`]);
 
+    for (const [name, source, normalizedSource] of [
+      ['quotes-then-parentheses', 'A[Selected "node"]-->B[Select(node)]', 'A[Selected #quot;node#quot;]-->B["Select(node)"]'],
+      ['parentheses-then-quotes', 'A[Select(node)]-->B[Selected "node"]', 'A["Select(node)"]-->B[Selected #quot;node#quot;]'],
+      ['both-in-one-label', 'A[Select(node) "quoted"]-->B', 'A["Select(node) #quot;quoted#quot;"]-->B'],
+    ]) {
+      assert.equal((await renderMermaid(name, `flowchart LR\n${source}`)).diagramType, 'flowchart-v2');
+      assert.equal(renderCalls.at(-1), `flowchart LR\n${normalizedSource}`);
+      assert.ok(renderCalls.splice(0).length <= 3);
+    }
+    await assert.rejects(renderMermaid('incomplete', 'flowchart LR\nA -->'), (error) => error.incomplete && error.line === 2);
+
     for (const source of ['flowchart LR\n A -->', 'pie\n "x": abc', 'pie\n "x": -2', 'notADiagram\n A --> B']) {
       await assert.rejects(renderMermaid('source-error', source), isMermaidSourceError);
     }

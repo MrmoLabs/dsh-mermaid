@@ -5,7 +5,7 @@ import {
   isMermaidSource,
 } from './detection.js';
 import { resolveLocale, translate } from './i18n.js';
-import { CSS } from './styles.js';
+import { CSS, FALLBACK_CSS } from './styles.js';
 import { ensureSvgAccessibility, hasSvgContent, localizeGeneratedSvgTitle, prepareSvgPreview, serializeSvg } from './svg.js';
 import { DEFAULT_STYLE, effectiveStyle, styleKey } from './render-config.js';
 import { createStyleLoader } from './style-loader.js';
@@ -18,7 +18,9 @@ const RENDER_DEBOUNCE_MS = 500;
 const MAX_SOURCE_CHARS = 50_000;
 const MAX_SOURCE_LINES = 2_000;
 const RUNTIME_LOAD_TIMEOUT_MS = 12_000;
-const RETRYABLE_RENDER_ERRORS = new Set(['runtimeLoadFailed', 'runtimeRenderFailed', 'missingSvg']);
+const RUNTIME_RENDER_TIMEOUT_MS = 15_000;
+const LOAD_ERRORS = { 'load-module': 'runtimeLoadFailed', 'load-fetch': 'runtimeFetchFailed', 'load-timeout': 'runtimeLoadTimeout' };
+const RETRYABLE_RENDER_ERRORS = new Set([...Object.values(LOAD_ERRORS), 'runtimeRenderFailed', 'runtimeRenderTimeout', 'missingSvg']);
 const RUNTIME_REVISION = typeof __DSH_MERMAID_RUNTIME_REV__ === 'undefined'
   ? 'development'
   : __DSH_MERMAID_RUNTIME_REV__;
@@ -28,9 +30,11 @@ const ENGINE_VERSION = typeof __DSH_MERMAID_VERSION__ === 'undefined' ? 'develop
 let uid = 0;
 let currentLocale = 'en';
 let styleTag = null;
+let styleLink = null;
 let mermaidRuntime = null;
 let runtimePromise = null;
 let runtimeRetry = 0;
+let runtimeLoadFailure = null;
 let renderQueueActive = false;
 let tooltipPositioner = null;
 let tooltipPositionerFactory = null;
@@ -62,18 +66,23 @@ function setMermaidRuntimeForTesting(runtime, positionerFactory, viewPositioner,
   };
 }
 
+function withDeadline(work, delay, timeoutError) {
+  let timer;
+  const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(timeoutError), delay); });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+}
+
+function retireRuntime() {
+  mermaidRuntime = runtimePromise = runtimeLoadFailure = null;
+  runtimeRetry += 1;
+}
+
 function loadMermaidRuntime() {
   if (mermaidRuntime) return Promise.resolve(mermaidRuntime);
   if (!runtimePromise) {
-    let timeout;
     const url = runtimeRetry ? `${RUNTIME_URL}&retry=${runtimeRetry}` : RUNTIME_URL;
-    const deadline = new Promise((_, reject) => {
-      timeout = setTimeout(() => {
-        runtimeRetry += 1;
-        reject(new Error('Mermaid runtime load timed out'));
-      }, RUNTIME_LOAD_TIMEOUT_MS);
-    });
-    runtimePromise = Promise.race([import(url), deadline])
+    const timeout = new Error('Mermaid runtime load timed out');
+    runtimePromise = withDeadline(import(url), RUNTIME_LOAD_TIMEOUT_MS, timeout)
       .then((module) => {
         mermaidRuntime = {
           initialize: module.default.initialize,
@@ -84,14 +93,14 @@ function loadMermaidRuntime() {
         };
         tooltipPositionerFactory = module.createTooltipPositioner;
         preserveViewPosition = module.preserveViewPosition;
-        fullscreenViewer = module.createFullscreenViewer?.({ t }) ?? null;
+        fullscreenViewer ||= module.createFullscreenViewer?.({ t });
         return mermaidRuntime;
       })
       .catch((error) => {
-        runtimePromise = null;
+        runtimeLoadFailure = error === timeout ? 'load-timeout'
+          : /failed to fetch|loading module|module script/i.test(error?.message) ? 'load-fetch' : 'load-module';
         throw error;
-      })
-      .finally(() => clearTimeout(timeout));
+      });
   }
   return runtimePromise;
 }
@@ -176,7 +185,7 @@ function setActionAvailability(entry) {
   const fresh = isPreviewFresh(entry);
   entry.btnFullscreen.disabled = !fresh;
   entry.btnDownloadSvg.disabled = !fresh;
-  entry.btnDownloadPng.disabled = !fresh || entry.pngPending;
+  entry.btnDownloadPng.disabled = entry.btnDownloadPngBackground.disabled = !fresh || entry.pngPending;
   entry.btnReset.disabled = !entry.draftDirty;
   entry.btnRetry.hidden = !RETRYABLE_RENDER_ERRORS.has(entry.messageKey);
   entry.errorActions.hidden = entry.wrapper.dataset.state !== 'error';
@@ -189,8 +198,14 @@ function setActionAvailability(entry) {
 function zoomInline(entry, multiplier) {
   const preview = entry.inlinePreview;
   if (!preview) return;
-  preview.zoom(multiplier ? preview.scale * multiplier : 1);
-  setActionAvailability(entry);
+  if (multiplier) preview.zoom(preview.scale * multiplier);
+  else preview.fit();
+}
+
+function renderMessage(key, parameters) {
+  if (key !== 'renderFailed') return t(key, parameters);
+  const reason = t(parameters.reason || 'syntaxInvalid');
+  return t(parameters.line ? 'renderFailedLine' : key, { line: parameters.line, reason });
 }
 
 function updateNotice(entry) {
@@ -202,7 +217,7 @@ function updateNotice(entry) {
   }
   const parameters = { ...entry.noticeParameters };
   if (entry.noticeDetailKey) {
-    parameters.detail = t(entry.noticeDetailKey, entry.noticeDetailParameters);
+    parameters.detail = renderMessage(entry.noticeDetailKey, entry.noticeDetailParameters);
   }
   entry.noticeEl.hidden = false;
   entry.noticeEl.dataset.tone = entry.noticeTone || 'info';
@@ -241,6 +256,7 @@ function localizeEntry(entry) {
   entry.exportMenu.setAttribute('aria-label', t('export'));
   entry.btnDownloadSvg.textContent = t('downloadSvg');
   entry.btnDownloadPng.textContent = t('downloadPng');
+  entry.btnDownloadPngBackground.textContent = t('downloadPngBackground');
   entry.btnCopy.textContent = t('copySource');
   entry.btnDownloadMmd.textContent = t('downloadMmd');
   entry.btnReset.textContent = t('reset');
@@ -253,6 +269,7 @@ function localizeEntry(entry) {
   entry.sourceLabel.textContent = t('sourceLabel');
   entry.previewLabel.textContent = t('previewLabel');
   entry.draftHint.textContent = t('draftHint');
+  entry.detailsLabel.textContent = t('errorDetails');
   if (entry.statusKey) entry.statusEl.textContent = t(entry.statusKey, entry.statusParameters);
   updateNotice(entry);
   updateConfigWarning(entry);
@@ -261,7 +278,7 @@ function localizeEntry(entry) {
     t('diagramTitle', { type: entry.type }),
   );
   if (entry.messageKey && !entry.pane.querySelector('svg') && entry.pane.dataset.state !== 'ok') {
-    const message = t(entry.messageKey, entry.messageParameters);
+    const message = renderMessage(entry.messageKey, entry.messageParameters);
     entry.pane.textContent = message;
     if (entry.wrapper.dataset.state === 'error') entry.errorEl.textContent = message;
   }
@@ -292,13 +309,21 @@ function injectCss() {
   if (styleTag || !document.head) return;
   styleTag = document.createElement('style');
   styleTag.id = TAG_ID;
-  styleTag.textContent = CSS;
+  styleTag.textContent = typeof __DSH_MERMAID_STYLE_REV__ === 'undefined' ? CSS : FALLBACK_CSS;
   document.head.appendChild(styleTag);
+  if (typeof __DSH_MERMAID_STYLE_REV__ !== 'undefined') {
+    styleLink = document.createElement('link');
+    styleLink.rel = 'stylesheet';
+    styleLink.href = `/dsh-mermaid/card.css?rev=${__DSH_MERMAID_STYLE_REV__}`;
+    document.head.appendChild(styleLink);
+  }
 }
 
 function removeCss() {
   styleTag?.remove();
   styleTag = null;
+  styleLink?.remove();
+  styleLink = null;
 }
 
 function isMermaidCodeBlock(code) {
@@ -324,14 +349,19 @@ function setView(entry, view) {
     if (view === 'code') entry.codePane.textContent = currentRawSource(entry);
   }
   setActionAvailability(entry);
-  if (view !== 'code' && entry.deferredRender) scheduleRender(entry, 0);
-  else if (view !== 'code' && entry.previewNeedsMeasurement && isPreviewFresh(entry)) {
-    entry.previewNeedsMeasurement = false;
-    const svg = entry.pane.querySelector('svg');
-    if (!prepareSvgPreview(svg, entry.renderedType)) {
-      svg.remove();
-      setEntryEmpty(entry, 'emptyDiagram');
-    } else entry.inlinePreview?.update(svg);
+  if (view !== 'code' && (entry.deferredRender || view === 'edit' && entry.messageKey === 'awaitingSource')) scheduleRender(entry, 0);
+  else measurePendingPreview(entry);
+}
+
+function measurePendingPreview(entry) {
+  if (!entry.previewNeedsMeasurement || !isPreviewFresh(entry)) return;
+  const svg = entry.pane.querySelector('svg');
+  if (!svg.getClientRects().length) return;
+  entry.previewNeedsMeasurement = false;
+  if (prepareSvgPreview(svg, entry.renderedType)) entry.inlinePreview?.update(svg);
+  else {
+    svg.remove();
+    setEntryEmpty(entry, 'emptyDiagram');
   }
 }
 
@@ -352,6 +382,12 @@ function setEntryStatus(entry, key, parameters = {}) {
   entry.statusEl.textContent = t(key, parameters);
 }
 
+function setErrorDetails(entry, detail = '') {
+  entry.errorDetails.open = false;
+  entry.errorDetails.hidden = !detail;
+  entry.detailText.textContent = detail.slice(0, 4000);
+}
+
 function setEntryRendered(entry) {
   entry.lastRenderState = 'ok';
   entry.failedTarget = null;
@@ -360,26 +396,27 @@ function setEntryRendered(entry) {
   entry.wrapper.dataset.state = 'ok';
   entry.pane.dataset.state = 'ok';
   entry.errorEl.textContent = '';
+  setErrorDetails(entry);
   setNotice(entry, null);
   setEntryStatus(entry, 'rendered');
   setActionAvailability(entry);
   if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.setUpdating(false);
 }
 
-function setEntryLoading(entry, deferred = false) {
-  const key = deferred ? 'renderDeferred' : 'rendering';
+function setEntryLoading(entry, key = 'rendering') {
   const hasSvg = Boolean(entry.pane.querySelector('svg'));
-  entry.wrapper.dataset.state = deferred ? 'pending' : 'rendering';
+  entry.wrapper.dataset.state = key === 'rendering' ? 'rendering' : 'pending';
   entry.errorEl.textContent = '';
+  setErrorDetails(entry);
   entry.messageKey = key;
   entry.messageParameters = {};
   if (hasSvg) {
     entry.pane.dataset.state = 'stale';
-    setNotice(entry, deferred ? key : 'previewUpdating');
+    setNotice(entry, key === 'rendering' ? 'previewUpdating' : key);
   } else {
     entry.pane.dataset.state = 'loading';
     entry.pane.textContent = t(key);
-    setNotice(entry, deferred ? key : null);
+    setNotice(entry, key === 'renderDeferred' ? key : null);
   }
   setEntryStatus(entry, key);
   setActionAvailability(entry);
@@ -387,13 +424,26 @@ function setEntryLoading(entry, deferred = false) {
 }
 
 function setEntryError(entry, key, parameters, statusKey = key) {
-  const message = t(key, parameters);
+  const message = renderMessage(key, parameters);
   const hasSvg = Boolean(entry.pane.querySelector('svg'));
   entry.wrapper.dataset.state = 'error';
   entry.messageKey = key;
   entry.messageParameters = parameters;
   entry.lastRenderState = 'error';
   entry.failedTarget = `${currentRawSource(entry).trim()}\0${currentStyleKey()}`;
+  if (entry.diagnosticTarget !== entry.failedTarget) {
+    entry.diagnosticTarget = entry.failedTarget;
+    entry.diagnosticFailures.clear();
+    entry.retryCount = 0;
+  }
+  const failure = { stage: entry.failureStage, outcome: key, reason: parameters.reason, line: parameters.line };
+  const fingerprint = JSON.stringify(failure);
+  const previousCount = entry.diagnosticFailures.get(fingerprint)?.occurrences || 0;
+  // Retain a short history for this source and theme without recording the source itself.
+  entry.diagnosticFailures.delete(fingerprint);
+  if (entry.diagnosticFailures.size === 8) entry.diagnosticFailures.delete(entry.diagnosticFailures.keys().next().value);
+  entry.diagnosticFailures.set(fingerprint, { ...failure, occurrences: previousCount + 1 });
+  setErrorDetails(entry, key === 'renderFailed' ? parameters.detail : '');
   if (hasSvg) {
     entry.pane.dataset.state = 'stale';
     entry.errorEl.textContent = '';
@@ -409,7 +459,8 @@ function setEntryError(entry, key, parameters, statusKey = key) {
     entry.errorEl.textContent = message;
     setNotice(entry, null);
     setEntryStatus(entry, statusKey, parameters);
-    if (!RETRYABLE_RENDER_ERRORS.has(key) && entry.wrapper.dataset.view === 'diagram') setView(entry, 'edit');
+    const unconfirmedSource = key === 'renderFailed' && entry.nativeSource === undefined && !entry.draftDirty;
+    if (!unconfirmedSource && !RETRYABLE_RENDER_ERRORS.has(key) && entry.wrapper.dataset.view === 'diagram') setView(entry, 'edit');
   }
   setActionAvailability(entry);
   if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.close();
@@ -422,6 +473,7 @@ function setEntryEmpty(entry, key = 'emptyDraft') {
   entry.messageKey = key;
   entry.messageParameters = {};
   entry.errorEl.textContent = '';
+  setErrorDetails(entry);
   entry.lastRenderState = 'empty';
   if (hasSvg) {
     entry.pane.dataset.state = 'stale';
@@ -436,11 +488,14 @@ function setEntryEmpty(entry, key = 'emptyDraft') {
   if (key === 'emptyDiagram' && fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.close();
 }
 
-function downloadFile(entry, blob, type, extension, status) {
+function downloadFile(entry, blob, source, extension, status, suffix = '') {
+  const type = diagramType(source) || diagramType(entry.lastRendered) || 'diagram';
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) hash = Math.imul(hash ^ source.charCodeAt(index), 16777619);
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `mermaid-${type}.${extension}`;
+  anchor.download = `mermaid-${type}-${(hash >>> 0).toString(16).padStart(8, '0')}${suffix}.${extension}`;
   anchor.hidden = true;
   document.body.appendChild(anchor);
   anchor.click();
@@ -449,18 +504,19 @@ function downloadFile(entry, blob, type, extension, status) {
   setEntryStatus(entry, status);
 }
 
-async function exportDiagram(entry, extension) {
+async function exportDiagram(entry, extension, matchTheme) {
   if (extension === 'mmd') {
     const source = currentRawSource(entry);
-    const type = diagramType(source.trim()) || diagramType(entry.lastRendered) || 'diagram';
-    downloadFile(entry, new Blob([source], { type: 'text/plain;charset=utf-8' }), type, extension, 'downloadedMmd');
+    downloadFile(entry, new Blob([source], { type: 'text/plain;charset=utf-8' }), source.trim(), extension, 'downloadedMmd');
     return;
   }
   if (!isPreviewFresh(entry)) return;
   const svg = entry.pane.querySelector('svg');
-  const type = diagramType(entry.lastRendered) || 'diagram';
+  const source = entry.lastRendered;
   if (extension === 'svg') {
-    downloadFile(entry, new Blob([serializeSvg(svg)], { type: 'image/svg+xml;charset=utf-8' }), type, extension, 'downloaded');
+    const exported = svg.cloneNode(true);
+    if (entry.renderedBackground) exported.style.backgroundColor = entry.renderedBackground;
+    downloadFile(entry, new Blob([serializeSvg(exported)], { type: 'image/svg+xml;charset=utf-8' }), source, extension, 'downloaded');
     return;
   }
   if (entry.pngPending) return;
@@ -468,8 +524,9 @@ async function exportDiagram(entry, extension) {
   setActionAvailability(entry);
   const isCurrent = () => entry.wrapper.isConnected && entry.pane.querySelector('svg') === svg && isPreviewFresh(entry);
   try {
-    const blob = await mermaidRuntime.rasterizeSvg(svg);
-    if (isCurrent()) downloadFile(entry, blob, type, extension, 'downloadedPng');
+    const background = matchTheme ? entry.renderedBackground || (isDark() ? '#000' : '#fff') : null;
+    const blob = await entry.rasterizeSvg(svg, background);
+    if (isCurrent()) downloadFile(entry, blob, source, extension, 'downloadedPng', matchTheme ? '-background' : '');
   } catch {
     if (isCurrent()) setEntryStatus(entry, 'pngExportFailed');
   } finally {
@@ -548,6 +605,7 @@ function createEntry(code, nativeSource) {
   const btnFullscreen = createButton('dsh-mmd-diagram-action dsh-mmd-fullscreen');
   const btnDownloadSvg = createButton('dsh-mmd-diagram-action');
   const btnDownloadPng = createButton();
+  const btnDownloadPngBackground = createButton();
   const btnCopy = createButton('dsh-mmd-source-action');
   const btnDownloadMmd = createButton('dsh-mmd-source-action');
   const btnRetry = createButton('dsh-mmd-retry');
@@ -561,7 +619,7 @@ function createEntry(code, nativeSource) {
   exportMenu.setAttribute('popover', 'auto');
   exportMenu.setAttribute('role', 'group');
   exportButton.popoverTargetElement = exportMenu;
-  exportMenu.append(btnDownloadSvg, btnDownloadPng, btnDownloadMmd);
+  exportMenu.append(btnDownloadSvg, btnDownloadPng, btnDownloadPngBackground, btnDownloadMmd);
   fileActions.append(btnCopy, exportButton, exportMenu);
   const errorActions = document.createElement('div');
   errorActions.className = 'dsh-mmd-error-actions';
@@ -625,6 +683,12 @@ function createEntry(code, nativeSource) {
   configWarning.hidden = true;
   const errorEl = document.createElement('div');
   errorEl.className = 'dsh-mmd-error';
+  const errorDetails = document.createElement('details');
+  errorDetails.className = 'dsh-mmd-error-details';
+  const detailsLabel = document.createElement('summary');
+  const detailText = document.createElement('pre');
+  errorDetails.append(detailsLabel, detailText);
+  errorDetails.hidden = true;
   const statusEl = document.createElement('div');
   statusEl.className = 'dsh-mmd-sr-only';
   statusEl.setAttribute('role', 'status');
@@ -633,20 +697,20 @@ function createEntry(code, nativeSource) {
 
   body.append(codePane, editorPane, preview, configWarning, statusEl);
   bar.append(views, fileActions);
-  feedback.append(noticeEl, errorEl, errorActions);
+  feedback.append(noticeEl, errorEl, errorDetails, errorActions);
   wrapper.append(bar, feedback, body);
 
   const entry = {
     code, wrapper, bar, views, fileActions, preview, previewControls, pane, codePane, editor, body, feedback,
     sourceLabel, previewLabel, draftHint, btnReset, noticeEl, configWarning, errorEl, errorActions, statusEl,
-    type: 'mermaid', btnDiagram, btnCode, btnEdit,
-    btnFullscreen, btnDownloadSvg, btnDownloadPng, btnCopy, btnDownloadMmd, btnRetry, btnDiagnostics,
+    type: 'mermaid', btnDiagram, btnCode, btnEdit, errorDetails, detailsLabel, detailText,
+    btnFullscreen, btnDownloadSvg, btnDownloadPng, btnDownloadPngBackground, btnCopy, btnDownloadMmd, btnRetry, btnDiagnostics,
     exportButton, exportMenu, pngPending: false,
     zoomOut, zoomFit, zoomIn, inlinePreview: null,
     nativeSource, draft: raw, draftDirty: false, composing: false,
     lastRendered: '', lastRenderedStyleKey: '', lastRenderState: 'idle',
     targetStyleKey: currentStyleKey(), mountId: mount.id,
-    retryCount: 0, failureStage: '',
+    retryCount: 0, failureStage: '', diagnosticFailures: new Map(),
     stableTimer: null, renderTimer: null, renderGeneration: 0, viewAdjustment: 0,
     messageKey: 'rendering', messageParameters: {},
     statusKey: null, statusParameters: {}, tooltipPositioner,
@@ -673,11 +737,13 @@ function createEntry(code, nativeSource) {
     }
     exportMenu.querySelector('button:enabled')?.focus({ preventScroll: true });
   });
-  for (const [button, format] of [[btnDownloadSvg, 'svg'], [btnDownloadPng, 'png'], [btnDownloadMmd, 'mmd']]) {
+  for (const [button, format, matchTheme] of [
+    [btnDownloadSvg, 'svg'], [btnDownloadPng, 'png'], [btnDownloadPngBackground, 'png', true], [btnDownloadMmd, 'mmd'],
+  ]) {
     button.addEventListener('click', () => {
       exportMenu.hidePopover?.();
       exportButton.focus({ preventScroll: true });
-      void exportDiagram(entry, format);
+      void exportDiagram(entry, format, matchTheme);
     });
   }
   btnReset.addEventListener('click', () => resetDraft(entry));
@@ -688,6 +754,7 @@ function createEntry(code, nativeSource) {
     if (btnRetry.hidden) return;
     const hadFocus = document.activeElement === btnRetry;
     entry.retryCount += 1;
+    if (runtimeLoadFailure) retireRuntime();
     scheduleRender(entry, 0, true);
     if (hadFocus) bar.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
   });
@@ -698,7 +765,9 @@ function createEntry(code, nativeSource) {
       mermaid: ENGINE_VERSION,
       stage: entry.failureStage,
       outcome: entry.messageKey,
+      line: entry.messageParameters?.line,
       retryAttempts: entry.retryCount,
+      failures: [...entry.diagnosticFailures.values()],
     };
     void copyText(entry, JSON.stringify(report, null, 2), 'diagnosticsCopied');
   });
@@ -727,6 +796,7 @@ function createEntry(code, nativeSource) {
   wrappers.add(wrapper);
   if (nativeSource !== undefined) {
     code.append(wrapper);
+    mount.viewport?.observe(wrapper);
     scheduleRender(entry, 0);
     return;
   }
@@ -738,6 +808,7 @@ function createEntry(code, nativeSource) {
       return;
     }
     pre.parentNode.insertBefore(wrapper, pre);
+    mount.viewport?.observe(wrapper);
     scheduleRender(entry);
   }, STABLE_MS);
 }
@@ -762,7 +833,7 @@ async function renderDiagram(entry) {
   if (entry.composing || entry.renderTimer) return;
   if (entry.wrapper.dataset.view === 'code' && !entry.renderInCode) {
     entry.deferredRender = true;
-    setEntryLoading(entry, true);
+    setEntryLoading(entry, 'renderDeferred');
     return;
   }
   entry.renderInCode = false;
@@ -810,13 +881,16 @@ async function renderDiagram(entry) {
   }
 
   let runtime;
+  let controller;
+  const renderTimeout = new Error('Mermaid render timed out');
   entry.failureStage = 'load';
   try {
     const [loadedRuntime, snapshot] = await Promise.all([loadMermaidRuntime().catch(() => null), loadStyle(owner)]);
     runtime = loadedRuntime;
     if (!isCurrent()) return;
     if (!runtime) {
-      setEntryError(entry, 'runtimeLoadFailed', {});
+      entry.failureStage = runtimeLoadFailure || 'load-module';
+      setEntryError(entry, LOAD_ERRORS[entry.failureStage], {});
       return;
     }
     const style = effectiveStyle(snapshot.style, isDark());
@@ -826,7 +900,10 @@ async function renderDiagram(entry) {
     initializeMermaid(runtime, style);
     entry.failureStage = 'render';
     const id = `dsh-mmd-${++uid}`;
-    const { svg, bindFunctions, diagramType: renderedType } = await runtime.render(id, source);
+    controller = new AbortController();
+    const { svg, bindFunctions, diagramType: renderedType, background } = await withDeadline(
+      runtime.render(id, source, controller.signal), RUNTIME_RENDER_TIMEOUT_MS, renderTimeout,
+    );
     if (!isCurrent()) return;
     entry.failureStage = 'svg';
     const markup = document.createElement('template');
@@ -875,17 +952,37 @@ async function renderDiagram(entry) {
     entry.lastRendered = source;
     entry.lastRenderedStyleKey = capturedKey;
     entry.renderedType = renderedType;
-    entry.previewNeedsMeasurement = entry.wrapper.dataset.view === 'code';
-    entry.inlinePreview ||= runtime.createInlinePreview?.(entry.pane);
+    entry.renderedBackground = background;
+    entry.rasterizeSvg = runtime.rasterizeSvg;
+    entry.previewNeedsMeasurement = !svgElement.getClientRects().length;
+    entry.pane.style.setProperty('--dsh-mmd-diagram-background', background || '');
+    entry.inlinePreview ||= runtime.createInlinePreview?.(
+      entry.pane, () => setActionAvailability(entry), () => measurePendingPreview(entry),
+    );
     entry.inlinePreview?.update(svgElement);
     entry.pane.scrollLeft = scrollLeft;
     entry.pane.scrollTop = scrollTop;
     setEntryRendered(entry);
     if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.update(entry, false);
   } catch (error) {
+    if (error === renderTimeout) {
+      controller.abort(error);
+      if (runtime === mermaidRuntime) retireRuntime();
+      if (isCurrent()) {
+        entry.failureStage = 'render-timeout';
+        setEntryError(entry, 'runtimeRenderTimeout', {});
+      }
+      return;
+    }
     if (!isCurrent()) return;
     const parameters = { detail: error?.message || String(error) };
     if (runtime?.isSourceError?.(error)) {
+      if (error.incomplete && entry.nativeSource === undefined && !entry.draftDirty && entry.wrapper.dataset.view === 'diagram') {
+        setEntryLoading(entry, 'awaitingSource');
+        return;
+      }
+      if (error.line) parameters.line = error.line + (raw.slice(0, raw.length - raw.trimStart().length).match(/\n/g)?.length || 0);
+      parameters.reason = error.reason;
       entry.failureStage = 'source';
       const hasSvg = Boolean(entry.pane.querySelector('svg'));
       setEntryError(entry, 'renderFailed', parameters, hasSvg ? 'previewStaleStatus' : 'renderFailedStatus');
@@ -903,6 +1000,7 @@ function cancelScheduledRender(entry) {
 function scheduleRender(entry, delay = RENDER_DEBOUNCE_MS, renderInCode = false) {
   cancelScheduledRender(entry);
   entry.renderGeneration += 1;
+  entry.waitingForViewport = false;
   if (!entry.draftDirty && !entry.composing) {
     syncDraftFromMessage(entry);
     if (!messageSource(entry).trim()) {
@@ -922,7 +1020,7 @@ function scheduleRender(entry, delay = RENDER_DEBOUNCE_MS, renderInCode = false)
   }
   // Reflect stale previews during the debounce and while other cards render.
   entry.deferredRender = entry.wrapper.dataset.view === 'code' && !renderInCode;
-  setEntryLoading(entry, entry.deferredRender);
+  setEntryLoading(entry, entry.deferredRender ? 'renderDeferred' : 'rendering');
   if (entry.composing || entry.deferredRender) return;
   entry.renderTimer = setTimeout(() => {
     entry.renderTimer = null;
@@ -934,10 +1032,23 @@ function yieldToBrowser() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function canRenderInViewport(entry) {
+  return !mount?.viewport || entry.nearViewport || entry.renderInCode || entry.draftDirty || fullscreenViewer?.isOpenFor(entry);
+}
+
+function waitForViewport(entry) {
+  entry.waitingForViewport = true;
+  setEntryLoading(entry, 'awaitingViewport');
+}
+
 function enqueueRender(entry) {
   if (entry.renderQueued) return;
+  if (!canRenderInViewport(entry)) return waitForViewport(entry);
+  entry.waitingForViewport = false;
   entry.renderQueued = true;
-  renderQueue.push(entry);
+  const bounds = mount?.viewport && entry.wrapper.getBoundingClientRect();
+  if (bounds && bounds.bottom > 0 && bounds.top < window.innerHeight) renderQueue.unshift(entry);
+  else renderQueue.push(entry);
   void drainRenderQueue();
 }
 
@@ -949,6 +1060,10 @@ async function drainRenderQueue() {
       const entry = renderQueue.shift();
       entry.renderQueued = false;
       if (entry.wrapper.isConnected && entry.code.isConnected) {
+        if (!canRenderInViewport(entry) && entry.wrapper.dataset.view !== 'code') {
+          waitForViewport(entry);
+          continue;
+        }
         await renderDiagram(entry);
         await yieldToBrowser();
       }
@@ -969,6 +1084,7 @@ function disposeEntry(entry) {
   if (entry.stableTimer) clearTimeout(entry.stableTimer);
   if (entry.renderTimer) clearTimeout(entry.renderTimer);
   entry.renderGeneration += 1;
+  mount?.viewport?.unobserve(entry.wrapper);
   entry.inlinePreview?.dispose();
   if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.close();
   entry.wrapper.remove();
@@ -1033,6 +1149,16 @@ function apply(ctx) {
     if (typeof document === 'undefined' || !document.body) return undefined;
     if (mount) throw new Error('dsh-mermaid: duplicate client mount');
     const owner = { id: ++mountSequence, loader: createStyleLoader(), snapshot: null, promise: null, warningAnnounced: false, nativeFencesActive: false };
+    if (document.documentElement.clientHeight && window.IntersectionObserver) {
+      owner.viewport = new window.IntersectionObserver((changes) => {
+        for (const change of changes) {
+          const entry = entries.get(change.target._dshCode);
+          if (!entry || entry.wrapper !== change.target) continue;
+          entry.nearViewport = change.isIntersecting;
+          if (entry.nearViewport && entry.waitingForViewport) enqueueRender(entry);
+        }
+      }, { rootMargin: '360px 0px' });
+    }
     mount = owner;
     currentLocale = detectLocale();
     injectCss();
@@ -1065,6 +1191,7 @@ function apply(ctx) {
     return () => {
       if (mount === owner) mount = null;
       owner.loader.dispose();
+      owner.viewport?.disconnect();
       observer.disconnect();
       themeObserver.disconnect();
       localeObserver.disconnect();
