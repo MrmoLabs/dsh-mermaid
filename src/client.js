@@ -6,7 +6,7 @@ import {
 } from './detection.js';
 import { resolveLocale, translate } from './i18n.js';
 import { CSS } from './styles.js';
-import { ensureSvgAccessibility, localizeGeneratedSvgTitle, serializeSvg } from './svg.js';
+import { ensureSvgAccessibility, hasSvgContent, localizeGeneratedSvgTitle, serializeSvg } from './svg.js';
 import { createFullscreenViewer } from './viewer.js';
 import { DEFAULT_STYLE, effectiveStyle, styleKey } from './render-config.js';
 import { createStyleLoader } from './style-loader.js';
@@ -17,6 +17,7 @@ const STABLE_MS = 300;
 const RENDER_DEBOUNCE_MS = 500;
 const MAX_SOURCE_CHARS = 50_000;
 const MAX_SOURCE_LINES = 2_000;
+const RETRYABLE_RENDER_ERRORS = new Set(['runtimeLoadFailed', 'runtimeRenderFailed', 'missingSvg']);
 const RUNTIME_REVISION = typeof __DSH_MERMAID_RUNTIME_REV__ === 'undefined'
   ? 'development'
   : __DSH_MERMAID_RUNTIME_REV__;
@@ -59,7 +60,11 @@ function loadMermaidRuntime() {
   if (!runtimePromise) {
     runtimePromise = import(RUNTIME_URL)
       .then((module) => {
-        mermaidRuntime = { initialize: module.default.initialize, render: module.renderMermaid };
+        mermaidRuntime = {
+          initialize: module.default.initialize,
+          render: module.renderMermaid,
+          isSourceError: module.isMermaidSourceError,
+        };
         tooltipPositionerFactory = module.createTooltipPositioner;
         preserveViewPosition = module.preserveViewPosition;
         return mermaidRuntime;
@@ -151,6 +156,7 @@ function setActionAvailability(entry) {
   entry.btnFullscreen.disabled = !fresh;
   entry.btnDownloadSvg.disabled = !fresh;
   entry.btnReset.disabled = !entry.draftDirty;
+  entry.btnRetry.hidden = !RETRYABLE_RENDER_ERRORS.has(entry.messageKey);
 }
 
 function updateNotice(entry) {
@@ -198,6 +204,7 @@ function localizeEntry(entry) {
   entry.btnCopy.textContent = t('copySource');
   entry.btnDownloadMmd.textContent = t('downloadMmd');
   entry.btnReset.textContent = t('reset');
+  entry.btnRetry.textContent = t('retryRender');
   entry.editor.setAttribute('aria-label', t('editorLabel'));
   entry.draftHint.textContent = t('draftHint');
   if (entry.statusKey) entry.statusEl.textContent = t(entry.statusKey, entry.statusParameters);
@@ -342,28 +349,29 @@ function setEntryError(entry, key, parameters, statusKey = key) {
     entry.errorEl.textContent = message;
     setNotice(entry, null);
     setEntryStatus(entry, statusKey, parameters);
-    if (entry.wrapper.dataset.view === 'diagram') setView(entry, 'edit');
+    if (!RETRYABLE_RENDER_ERRORS.has(key) && entry.wrapper.dataset.view === 'diagram') setView(entry, 'edit');
   }
   setActionAvailability(entry);
   if (fullscreenViewer.isOpenFor(entry)) fullscreenViewer.close();
 }
 
-function setEntryEmpty(entry) {
+function setEntryEmpty(entry, key = 'emptyDraft') {
   const hasSvg = Boolean(entry.pane.querySelector('svg'));
+  const statusKey = hasSvg && key === 'emptyDiagram' ? 'emptyDiagramStale' : key;
   entry.wrapper.dataset.state = 'empty';
-  entry.messageKey = 'emptyDraft';
+  entry.messageKey = key;
   entry.messageParameters = {};
   entry.errorEl.textContent = '';
   entry.lastRenderState = 'empty';
   if (hasSvg) {
     entry.pane.dataset.state = 'stale';
-    setNotice(entry, 'emptyDraft', {}, 'info');
+    setNotice(entry, statusKey);
   } else {
     entry.pane.dataset.state = 'empty';
-    entry.pane.textContent = t('emptyDraft');
+    entry.pane.textContent = t(key);
     setNotice(entry, null);
   }
-  setEntryStatus(entry, 'emptyDraft');
+  setEntryStatus(entry, statusKey);
   setActionAvailability(entry);
 }
 
@@ -476,9 +484,12 @@ function createEntry(code) {
   const btnDownloadMmd = document.createElement('button');
   btnDownloadMmd.type = 'button';
   btnDownloadMmd.className = 'dsh-mmd-btn dsh-mmd-source-action';
+  const btnRetry = document.createElement('button');
+  btnRetry.type = 'button';
+  btnRetry.className = 'dsh-mmd-btn dsh-mmd-retry';
   const actionSlot = document.createElement('div');
   actionSlot.className = 'dsh-mmd-action-slot';
-  actionSlot.append(btnCopy, btnDownloadMmd, btnDownloadSvg, btnFullscreen);
+  actionSlot.append(btnCopy, btnDownloadMmd, btnDownloadSvg, btnFullscreen, btnRetry);
   const body = document.createElement('div');
   body.className = 'dsh-mmd-body';
   const pane = document.createElement('div');
@@ -529,7 +540,7 @@ function createEntry(code) {
   const entry = {
     code, wrapper, bar, pane, codePane, editorPane, editor, editorFooter, draftHint, btnReset,
     noticeEl, configWarning, errorEl, statusEl, badge, btnDiagram, btnCode, btnEdit,
-    btnFullscreen, btnDownloadSvg, btnCopy, btnDownloadMmd, actionSlot,
+    btnFullscreen, btnDownloadSvg, btnCopy, btnDownloadMmd, btnRetry, actionSlot,
     draft: code.textContent || '', draftDirty: false, composing: false,
     lastRendered: '', lastRenderedStyleKey: '', lastRenderState: 'idle',
     targetStyleKey: currentStyleKey(), mountId: mount.id,
@@ -551,6 +562,12 @@ function createEntry(code) {
   btnCopy.addEventListener('click', () => { void copySource(entry); });
   btnDownloadMmd.addEventListener('click', () => downloadMmd(entry));
   btnReset.addEventListener('click', () => resetDraft(entry));
+  btnRetry.addEventListener('click', () => {
+    if (btnRetry.hidden) return;
+    const hadFocus = document.activeElement === btnRetry;
+    scheduleRender(entry, 0);
+    if (hadFocus) bar.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
+  });
   editor.addEventListener('input', () => {
     entry.draft = editor.value;
     entry.draftDirty = true;
@@ -631,9 +648,15 @@ async function renderDiagram(entry) {
     return;
   }
 
+  let runtime;
   try {
-    const [runtime, snapshot] = await Promise.all([loadMermaidRuntime(), loadStyle(owner)]);
+    const [loadedRuntime, snapshot] = await Promise.all([loadMermaidRuntime().catch(() => null), loadStyle(owner)]);
+    runtime = loadedRuntime;
     if (!isCurrent()) return;
+    if (!runtime) {
+      setEntryError(entry, 'runtimeLoadFailed', {});
+      return;
+    }
     const style = effectiveStyle(snapshot.style, isDark());
     capturedKey = styleKey(style);
     entry.targetStyleKey = capturedKey;
@@ -641,14 +664,25 @@ async function renderDiagram(entry) {
     const id = `dsh-mmd-${++uid}`;
     const { svg, bindFunctions } = await runtime.render(id, source);
     if (!isCurrent()) return;
+    const markup = document.createElement('template');
+    markup.innerHTML = svg;
+    const svgElement = markup.content.querySelector('svg');
+    if (!svgElement) {
+      setEntryError(entry, 'missingSvg', {});
+      return;
+    }
+    if (!hasSvgContent(svgElement)) {
+      setEntryEmpty(entry, 'emptyDiagram');
+      if (fullscreenViewer.isOpenFor(entry)) fullscreenViewer.close();
+      return;
+    }
     // Binding requires the mounted SVG. Keep the original nodes for rollback
     // so a binding failure cannot separate the preview from lastRendered.
     const previousNodes = [...entry.pane.childNodes];
     try {
-      entry.pane.innerHTML = svg;
-      const svgElement = entry.pane.querySelector('svg');
+      entry.pane.replaceChildren(markup.content);
       ensureSvgAccessibility(svgElement, t('diagramTitle', { type: entry.badge.textContent || 'mermaid' }));
-      if (svgElement && bindFunctions) {
+      if (bindFunctions) {
         try {
           bindFunctions(svgElement);
         } finally {
@@ -674,8 +708,12 @@ async function renderDiagram(entry) {
   } catch (error) {
     if (!isCurrent()) return;
     const parameters = { detail: error?.message || String(error) };
-    const hasSvg = Boolean(entry.pane.querySelector('svg'));
-    setEntryError(entry, 'renderFailed', parameters, hasSvg ? 'previewStaleStatus' : 'renderFailedStatus');
+    if (runtime?.isSourceError?.(error)) {
+      const hasSvg = Boolean(entry.pane.querySelector('svg'));
+      setEntryError(entry, 'renderFailed', parameters, hasSvg ? 'previewStaleStatus' : 'renderFailedStatus');
+    } else {
+      setEntryError(entry, 'runtimeRenderFailed', parameters);
+    }
   }
 }
 
@@ -684,7 +722,7 @@ function cancelScheduledRender(entry) {
   entry.renderTimer = null;
 }
 
-function scheduleRender(entry) {
+function scheduleRender(entry, delay = RENDER_DEBOUNCE_MS) {
   cancelScheduledRender(entry);
   entry.renderGeneration += 1;
   if (!entry.draftDirty && !entry.composing) {
@@ -702,7 +740,7 @@ function scheduleRender(entry) {
   entry.renderTimer = setTimeout(() => {
     entry.renderTimer = null;
     enqueueRender(entry);
-  }, RENDER_DEBOUNCE_MS);
+  }, delay);
 }
 
 function yieldToBrowser() {
@@ -785,7 +823,7 @@ function handleMutations(mutations) {
   }
 
   codesToEnhance.forEach(maybeEnhance);
-  entriesToRender.forEach(scheduleRender);
+  entriesToRender.forEach((entry) => scheduleRender(entry));
   collectGarbage();
 }
 

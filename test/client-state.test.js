@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { registerHooks } from 'node:module';
 import { createClientHarness } from '../test-support/client-harness.js';
 
 async function waitFor(harness, condition) {
@@ -34,6 +35,121 @@ test('view controls work before the first runtime import', async () => {
     assert.equal(card.dataset.view, 'diagram');
     assert.deepEqual(errors, []);
   } finally { await harness.cleanup(); }
+});
+
+test('retries a failed runtime import without changing source or view', async () => {
+  let loads = 0;
+  const moduleSource = `export default { initialize() {} };
+    export async function renderMermaid(id, source) {
+      return { svg: '<svg><text>' + source + '</text></svg>' };
+    }`;
+  const hooks = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      if (specifier !== '/dsh-mermaid/mermaid-runtime.js?rev=development') return nextResolve(specifier, context);
+      if (++loads === 1) throw new Error('synthetic runtime load failure');
+      return { url: 'data:text/javascript,' + encodeURIComponent(moduleSource), shortCircuit: true };
+    },
+  });
+  let harness;
+  try {
+    harness = await createClientHarness({ initialSource: 'flowchart LR\nA', injectRuntime: false });
+    const { code, document } = harness;
+    await waitFor(harness, () => document.querySelector('.dsh-mmd[data-state="error"]'));
+    const card = document.querySelector('.dsh-mmd');
+    const retry = card.querySelector('.dsh-mmd-retry');
+    const [codeButton, diagramButton] = card.querySelectorAll('.dsh-mmd-view-control');
+    assert.equal(card.dataset.view, 'diagram');
+    assert.match(card.querySelector('.dsh-mmd-pane').textContent, /渲染器加载失败/);
+    assert.equal(retry.hidden, false);
+    assert.equal(retry.textContent, '重试渲染');
+    assert.equal(diagramActions(card)[0].disabled, true);
+
+    codeButton.click();
+    assert.match(card.querySelector('.dsh-mmd-error').textContent, /渲染器加载失败/);
+    retry.focus();
+    retry.click();
+    assert.equal(card.dataset.view, 'code');
+    assert.equal(card.dataset.state, 'rendering');
+    assert.equal(document.activeElement, codeButton);
+    assert.equal(retry.hidden, true);
+    await waitFor(harness, () => card.dataset.state === 'ok');
+    assert.equal(loads, 2);
+    assert.equal(card.querySelector('.dsh-mmd-code').textContent, code.textContent);
+    assert.equal(card.querySelector('svg text').textContent, code.textContent);
+    diagramButton.click();
+    assert.equal(diagramActions(card)[0].disabled, false);
+    assert.equal(retry.hidden, true);
+  } finally {
+    await harness?.cleanup();
+    hooks.deregister();
+  }
+});
+
+test('reports an empty rendered diagram and keeps its source editable', async () => {
+  const harness = await createClientHarness({ initialSource: 'flowchart LR' });
+  try {
+    const { document, pre, window } = harness;
+    await waitFor(harness, () => pre.previousElementSibling?.dataset.state === 'empty');
+    const card = pre.previousElementSibling;
+    const pane = card.querySelector('.dsh-mmd-pane');
+    assert.equal(pane.textContent, '图表为空。');
+    assert.equal(pane.querySelector('svg'), null);
+    assert.equal(card.querySelector('.dsh-mmd-retry').hidden, true);
+    assert.ok([...diagramActions(card)].every((button) => button.disabled));
+
+    document.documentElement.lang = 'en';
+    await waitFor(harness, () => pane.textContent === 'The diagram is empty.');
+    card.querySelectorAll('.dsh-mmd-view-control')[2].click();
+    const editor = card.querySelector('textarea');
+    assert.equal(editor.value, 'flowchart LR');
+    editor.value = 'flowchart LR\nA-->B';
+    editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+    await waitFor(harness, () => card.dataset.state === 'ok');
+    const oldSvg = pane.querySelector('svg');
+    assert.ok(oldSvg);
+
+    editor.value = 'flowchart LR';
+    editor.dispatchEvent(new window.Event('input', { bubbles: true }));
+    await waitFor(harness, () => card.dataset.state === 'empty');
+    assert.equal(pane.querySelector('svg'), oldSvg);
+    assert.equal(pane.dataset.state, 'stale');
+    assert.equal(card.querySelector('.dsh-mmd-notice').textContent, 'The diagram is empty. The last successful preview is still shown.');
+    assert.ok([...diagramActions(card)].every((button) => button.disabled));
+  } finally { await harness.cleanup(); }
+});
+
+test('offers the same-source retry after runtime initialization, drawing, or output fails', async (t) => {
+  for (const stage of ['initialize', 'draw', 'svg']) {
+    await t.test(stage, async () => {
+      let fail = true;
+      const harness = await createClientHarness({
+        initializeRuntime() {
+          if (stage === 'initialize' && fail) throw new Error('initialize failed');
+        },
+        renderRuntime() {
+          if (stage === 'draw' && fail) throw new Error('drawing failed');
+          if (stage === 'svg' && fail) return { svg: '' };
+          return { svg: '<svg><rect width="20" height="20"></rect></svg>' };
+        },
+      });
+      try {
+        const { pre, code, state } = harness;
+        await waitFor(harness, () => pre.previousElementSibling?.dataset.state === 'error');
+        const card = pre.previousElementSibling;
+        const retry = card.querySelector('.dsh-mmd-retry');
+        assert.equal(card.dataset.view, 'diagram');
+        assert.match(card.querySelector('.dsh-mmd-pane').textContent, /渲染器(?:出错|未返回 SVG)/);
+        assert.equal(retry.hidden, false);
+        assert.ok([...diagramActions(card)].every((button) => button.disabled));
+        fail = false;
+        retry.click();
+        await waitFor(harness, () => card.dataset.state === 'ok');
+        assert.deepEqual(state.renderCalls, Array(stage === 'initialize' ? 1 : 2).fill(code.textContent));
+        assert.equal(retry.hidden, true);
+        assert.ok(card.querySelector('svg rect'));
+      } finally { await harness.cleanup(); }
+    });
+  }
 });
 
 test('clearing a rendered source removes its stale card and fullscreen, then permits streaming again', async (t) => {

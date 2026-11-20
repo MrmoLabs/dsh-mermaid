@@ -41,6 +41,16 @@ function serializeSvg(svg) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n${xml}`;
 }
 
+function hasSvgContent(svg) {
+  // Mermaid can return a root SVG with only styles, definitions and empty groups.
+  const graphics = 'circle, ellipse, foreignObject, image, line, path, polygon, polyline, rect, text, use';
+  for (const element of svg.querySelectorAll(graphics)) {
+    if (element.closest('defs, marker, clipPath, mask, pattern, symbol')) continue;
+    if (element.localName !== 'text' || element.textContent.trim()) return true;
+  }
+  return false;
+}
+
 function ensureSvgAccessibility(svg, titleText) {
   if (!svg) return;
   svg.setAttribute('role', 'img');
@@ -111,6 +121,7 @@ function rewriteSvgIds(svg) {
 
 export {
   ensureSvgAccessibility,
+  hasSvgContent,
   localizeGeneratedSvgTitle,
   rewriteSvgIds,
   serializeSvg,

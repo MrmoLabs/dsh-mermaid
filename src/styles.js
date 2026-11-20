@@ -9,6 +9,7 @@ const CSS = `
 .dsh-mmd-btn[aria-pressed='true']{border-color:var(--dsw-alias-button-primary-fill,#4c6ef5);color:var(--dsw-alias-button-primary-fill,#4c6ef5);background:var(--dsw-alias-interactive-bg-active,rgba(76,110,245,.12))}
 .dsh-mmd-btn:disabled{opacity:.45;cursor:not-allowed}
 .dsh-mmd-btn:disabled:hover{background:transparent}
+.dsh-mmd-retry[hidden]{display:none}
 .dsh-mmd-action-slot{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px}
 .dsh-mmd-body{padding:10px 12px;overflow-x:auto}
 .dsh-mmd-pane{display:block}

@@ -64,6 +64,7 @@ test('renders localized accessible cards and recovers from errors', async () => 
     assert.equal(invalidCard?.dataset.state, 'error');
     assert.equal(invalidCard?.dataset.view, 'edit');
     assert.match(invalidCard?.querySelector('.dsh-mmd-error')?.textContent || '', /渲染失败/);
+    assert.equal(invalidCard?.querySelector('.dsh-mmd-retry').hidden, true);
     assert.equal(invalidCard?.querySelector('[role="status"]')?.textContent, '图表渲染失败，已显示源代码。');
     const invalidViewControls = invalidCard?.querySelectorAll('.dsh-mmd-view-control') || [];
     assert.equal(invalidViewControls[0].hidden, false);

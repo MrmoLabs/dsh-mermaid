@@ -126,6 +126,8 @@ test('a failed binding restores the last good SVG before Reset and download', as
     setDraft(harness, card, 'flowchart LR\nVERY_DIFFERENT-->SOURCE');
     await waitFor(harness, () => card.dataset.state === 'error');
     assert.ok(card.querySelector('.dsh-mmd-pane svg') === oldSvg, 'binding failure replaced the last good SVG');
+    assert.match(card.querySelector('.dsh-mmd-notice').textContent, /渲染器出错/);
+    assert.equal(card.querySelector('.dsh-mmd-retry').hidden, false);
     assert.equal(card.querySelector('.dsh-mmd-diagram-action').disabled, true);
     failBinding = false;
     card.querySelector('.dsh-mmd-reset').click();
@@ -140,15 +142,25 @@ test('a failed binding restores the last good SVG before Reset and download', as
   } finally { await harness.cleanup(); }
 });
 
-test('an initial binding failure leaves no failed SVG and opens the repair editor', async () => {
-  const harness = await createClientHarness({ bindFunctions() { throw new Error('binding failed'); } });
+test('an initial binding failure removes the failed SVG and is retryable in diagram view', async () => {
+  let failBinding = true;
+  const harness = await createClientHarness({ bindFunctions() {
+    if (failBinding) throw new Error('binding failed');
+  } });
   try {
     await waitFor(harness, () => harness.document.querySelector('.dsh-mmd[data-state="error"]'));
     const card = harness.document.querySelector('.dsh-mmd');
     assert.ok(!card.querySelector('.dsh-mmd-pane svg'), 'failed initial SVG was retained');
-    assert.equal(card.dataset.view, 'edit');
+    assert.equal(card.dataset.view, 'diagram');
     assert.equal(card.querySelector('.dsh-mmd-diagram-action').disabled, true);
-    assert.match(card.querySelector('.dsh-mmd-error').textContent, /binding failed/);
+    assert.match(card.querySelector('.dsh-mmd-pane').textContent, /渲染器出错.*binding failed/);
+    const retry = card.querySelector('.dsh-mmd-retry');
+    assert.equal(retry.hidden, false);
+    failBinding = false;
+    retry.click();
+    await waitFor(harness, () => card.dataset.state === 'ok');
+    assert.deepEqual(harness.state.renderCalls, Array(2).fill(harness.code.textContent));
+    assert.equal(retry.hidden, true);
   } finally { await harness.cleanup(); }
 });
 

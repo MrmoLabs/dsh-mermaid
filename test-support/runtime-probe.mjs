@@ -22,7 +22,7 @@ function isMissingDomError(error) {
 if (scenario === 'with-dom') {
   const window = await installTestDom();
   try {
-    const { default: runtime, createTooltipPositioner, renderMermaid } = await import(runtimeUrl);
+    const { default: runtime, createTooltipPositioner, isMermaidSourceError, renderMermaid } = await import(runtimeUrl);
     assert.equal(typeof createTooltipPositioner, 'function');
     runtime.initialize({ startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true });
 
@@ -132,7 +132,65 @@ if (scenario === 'with-dom') {
 
     const invalid = `${original}\n  F -->`;
     await assert.rejects(renderMermaid('invalid', invalid), (error) => error?.hash?.token === 'PS');
-    assert.deepEqual(renderCalls, [invalid, `${normalized}\n  F -->`]);
+    assert.deepEqual(renderCalls.splice(0), [invalid, `${normalized}\n  F -->`]);
+
+    const embeddedQuotes = `flowchart LR
+A[事实层
+每次唤醒采样一次
+OS关联三态 / 0x59 / 端口活跃 / 拨号错误族 / USB/射频/前台] --> B[分类层
+WifiDialFailurePolicy 纯函数
+socketError+事实 → NoRoute/Refused/Timeout]
+B --> C[结果层
+WifiConnectResult
+TcpFailed 只留"关联在+拒连/超时"]
+C --> D[决策层
+WifiRecoveryMachine 纯内核
+只吃原因，决定动作与节拍]
+D --> E[执行层
+LinkRebuildPlan
+KeepSocket/RebuildDataPort/RebuildSockets/FullReconnect]
+E --> F[传输层
+三件套常驻 + 只换 socket + 定长缓冲]
+F --> A`;
+    const escaped = embeddedQuotes.replace('"关联在+拒连/超时"', '#quot;关联在+拒连/超时#quot;');
+    await assert.rejects(runtime.parse(embeddedQuotes), (error) => error?.hash?.token === 'STR');
+    assert.equal((await renderMermaid('embedded-quotes', embeddedQuotes)).diagramType, 'flowchart-v2');
+    assert.deepEqual(renderCalls.splice(0), [embeddedQuotes, escaped]);
+
+    const contexts = [
+      '---', 'title: Keep A[example "text"]', '---', 'graph LR',
+      '  %% Keep A[example "text"]',
+      '  A["Keep B[quoted]"] -->|"Keep C[edge]"| B',
+      '  B --> C@{ shape: rect, label: "Keep D[metadata]" }',
+      '  C --> D[Choose "left" or "right"]',
+    ].join('\r\n');
+    const escapedContexts = contexts.replace('"left" or "right"', '#quot;left#quot; or #quot;right#quot;');
+    assert.equal((await renderMermaid('quotes-with-context', contexts)).diagramType, 'flowchart-v2');
+    assert.deepEqual(renderCalls.splice(0), [contexts, escapedContexts]);
+    await renderMermaid('escaped-quotes', escapedContexts);
+    assert.deepEqual(renderCalls.splice(0), [escapedContexts]);
+
+    const missingQuote = 'flowchart LR\n A[Keep "text]';
+    await assert.rejects(renderMermaid('unpaired-quote', missingQuote), (error) => error?.hash?.token === 'STR');
+    assert.deepEqual(renderCalls.splice(0), [missingQuote]);
+
+    const brokenLink = `${embeddedQuotes}\n F -->`;
+    await assert.rejects(renderMermaid('broken-link', brokenLink), (error) => error?.hash?.token === 'STR');
+    assert.deepEqual(renderCalls.splice(0), [brokenLink, `${escaped}\n F -->`]);
+
+    for (const source of ['flowchart LR\n A -->', 'pie\n "x": abc', 'pie\n "x": -2', 'notADiagram\n A --> B']) {
+      await assert.rejects(renderMermaid('source-error', source), isMermaidSourceError);
+    }
+
+    const drawError = new Error('drawing failed');
+    runtime.render = async (_id, source) => {
+      await runtime.parse(source);
+      throw drawError;
+    };
+    // A recognized label error can be repaired successfully even when layout then fails.
+    for (const source of [labeledFlowchart, embeddedQuotes]) {
+      await assert.rejects(renderMermaid('draw-error', source), (error) => error === drawError && !isMermaidSourceError(error));
+    }
   } finally {
     delete globalThis.window;
     delete globalThis.document;

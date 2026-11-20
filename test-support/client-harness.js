@@ -5,7 +5,12 @@ import { normalizeRenderConfig } from '../src/render-config.js';
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', locale = 'zh-CN', bindFunctions, injectRuntime = true, config, fetchConfig } = {}) {
+class SyntheticSourceError extends Error {}
+
+async function createClientHarness({
+  initialSource = 'flowchart LR\nA-->B', locale = 'zh-CN', bindFunctions, injectRuntime = true,
+  config, fetchConfig, initializeRuntime, renderRuntime,
+} = {}) {
   const window = new Window({ url: 'http://localhost/' });
   const previousGlobals = new Map();
   const browserGlobals = {
@@ -61,16 +66,20 @@ async function createClientHarness({ initialSource = 'flowchart LR\nA-->B', loca
     initialize(options) {
       state.initializedThemes.push(options.theme);
       state.initializedOptions.push(options);
+      initializeRuntime?.(options);
     },
+    isSourceError: (error) => error instanceof SyntheticSourceError,
     async render(_id, source) {
       state.renderCalls.push(source);
       activeRenders += 1;
       state.maxActiveRenders = Math.max(state.maxActiveRenders, activeRenders);
       try {
-        if (source.endsWith('-->')) throw new Error('synthetic Mermaid failure');
+        if (renderRuntime) return await renderRuntime(_id, source);
+        if (source.endsWith('-->')) throw new SyntheticSourceError('synthetic Mermaid failure');
+        if (source === 'flowchart LR') return { svg: '<svg><title>Flowchart</title><defs><marker><path d="M0 0L1 1"/></marker></defs><g></g></svg>' };
         if (source.includes('SLOW')) {
           return await new Promise((resolve, reject) => {
-            state.releaseSlowRender = () => resolve({ svg: '<svg data-render="slow"></svg>', bindFunctions });
+            state.releaseSlowRender = () => resolve({ svg: '<svg data-render="slow"><path d="M0 0L1 1"></path></svg>', bindFunctions });
             state.rejectSlowRender = () => reject(new Error('synthetic delayed Mermaid failure'));
           });
         }
