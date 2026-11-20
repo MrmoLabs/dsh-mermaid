@@ -67,7 +67,7 @@ test('supports accessible fullscreen viewing and direct SVG download', async () 
     originalSvg.append(foreignObject);
 
     svgButton.click();
-    assert.equal(card.querySelector('.dsh-mmd-menu'), null);
+    assert.equal(svgButton.closest('.dsh-mmd-export-list').getAttribute('popover'), 'auto');
     assert.equal(state.downloadedName, 'mermaid-flowchart.svg');
     assert.equal(card.querySelector('[role="status"]')?.textContent, 'SVG 已下载。');
     assert.equal(state.objectUrls[0].type, 'image/svg+xml;charset=utf-8');

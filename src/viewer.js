@@ -1,4 +1,5 @@
 import { localizeGeneratedSvgTitle, rewriteSvgIds, svgDimensions } from './svg.js';
+import { VIEWER_CSS } from './styles.js';
 
 function createFullscreenViewer({ t }) {
   let viewer = null;
@@ -47,7 +48,7 @@ function createFullscreenViewer({ t }) {
     viewer.close.setAttribute('aria-label', t('closeViewer'));
     viewer.status.textContent = viewer.updating ? t('previewUpdating') : '';
     if (viewer.entry) {
-      const type = viewer.entry.badge.textContent || 'mermaid';
+      const type = viewer.entry.type;
       viewer.title.textContent = t('viewerTitle', { type });
       localizeGeneratedSvgTitle(viewer.stage.querySelector('svg'), t('diagramTitle', { type }));
     }
@@ -63,7 +64,7 @@ function createFullscreenViewer({ t }) {
     clone.setAttribute('width', String(dimensions.width));
     clone.setAttribute('height', String(dimensions.height));
     viewer.stage.replaceChildren(clone);
-    viewer.title.textContent = t('viewerTitle', { type: entry.badge.textContent || 'mermaid' });
+    viewer.title.textContent = t('viewerTitle', { type: entry.type });
     if (shouldFit) fit();
     setUpdating(false);
   }
@@ -119,6 +120,9 @@ function createFullscreenViewer({ t }) {
 
   function create() {
     if (viewer) return viewer;
+    const style = document.createElement('style');
+    style.textContent = VIEWER_CSS;
+    document.head.append(style);
     const overlay = document.createElement('div');
     overlay.className = 'dsh-mmd-viewer';
     overlay.hidden = true;
@@ -156,7 +160,7 @@ function createFullscreenViewer({ t }) {
     overlay.append(toolbar, status, viewport);
     document.body.appendChild(overlay);
     viewer = {
-      overlay, title, viewport, stage, status, updating: false, zoomOut, zoomLabel, zoomIn,
+      overlay, style, title, viewport, stage, status, updating: false, zoomOut, zoomLabel, zoomIn,
       fit: fitButton, close: closeButton, entry: null,
       scale: 1, panX: 0, panY: 0, dragging: false, pointerId: null,
       lastX: 0, lastY: 0, previousBodyOverflow: '', trigger: null, inertedElements: [],
@@ -239,6 +243,7 @@ function createFullscreenViewer({ t }) {
   function destroy() {
     close();
     viewer?.overlay.remove();
+    viewer?.style.remove();
     viewer = null;
   }
 

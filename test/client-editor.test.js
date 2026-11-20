@@ -104,9 +104,9 @@ test('draft survives view switches and message updates; Reset restores the messa
     setDraft(harness, card, draft);
     await harness.wait(700);
 
-    card.querySelectorAll('.dsh-mmd-view-control')[0].click();
+    card.querySelector('.dsh-mmd-view-control[data-view="code"]').click();
     assert.equal(card.dataset.view, 'code');
-    card.querySelectorAll('.dsh-mmd-view-control')[1].click();
+    card.querySelector('.dsh-mmd-view-control[data-view="diagram"]').click();
     assert.equal(card.dataset.view, 'diagram');
     card.querySelectorAll('.dsh-mmd-view-control')[2].click();
     assert.equal(card.querySelector('.dsh-mmd-textarea').value, draft);
@@ -172,6 +172,38 @@ test('an initially invalid block is editable and recovers', async () => {
     await waitFor(harness, () => card.dataset.state === 'ok');
     assert.equal(card.querySelector('.dsh-mmd-pane svg')?.getAttribute('data-source-length'), String('flowchart LR\nA-->OK'.length));
     assert.equal(card.dataset.view, 'edit');
+  } finally {
+    await harness.cleanup();
+  }
+});
+
+test('PNG export downloads once and discards results from a superseded preview', async () => {
+  let complete;
+  let calls = 0;
+  const harness = await createClientHarness({
+    rasterizeSvg: () => {
+      calls += 1;
+      return new Promise((resolve) => { complete = resolve; });
+    },
+  });
+  try {
+    const { card } = await openEditor(harness);
+    const pngButton = [...card.querySelectorAll('.dsh-mmd-export-list button')].find((button) => button.textContent === '下载 PNG');
+    const image = new Blob(['synthetic png'], { type: 'image/png' });
+    pngButton.click();
+    pngButton.click();
+    assert.equal(calls, 1);
+    assert.equal(pngButton.disabled, true);
+    complete(image);
+    await waitFor(harness, () => !pngButton.disabled);
+    assert.equal(harness.state.downloadedName, 'mermaid-flowchart.png');
+    assert.equal(harness.state.objectUrls[0], image);
+
+    pngButton.click();
+    setDraft(harness, card, 'flowchart LR\nA-->NEW');
+    complete(image);
+    await waitFor(harness, () => !pngButton.disabled);
+    assert.equal(harness.state.objectUrls.length, 1);
   } finally {
     await harness.cleanup();
   }

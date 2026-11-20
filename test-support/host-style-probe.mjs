@@ -140,6 +140,7 @@ try {
   assert.ok((await page.locator('.dsh-mmd-viewer-stage svg').evaluate((element) => element.outerHTML)).includes('#e0e7ff'));
   await page.getByRole('button', { name: 'Close fullscreen viewer' }).click();
   const downloadEvent = page.waitForEvent('download');
+  await first.getByRole('button', { name: /^Export/ }).click();
   await first.getByRole('button', { name: 'Download SVG', exact: true }).click();
   const download = await downloadEvent;
   const exported = join(directory, download.suggestedFilename());

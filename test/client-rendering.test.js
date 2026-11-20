@@ -18,9 +18,8 @@ test('renders localized accessible cards and recovers from errors', async () => 
     assert.equal(svg?.getAttribute('aria-labelledby'), svg?.querySelector('title')?.id);
 
     const viewControls = card.querySelectorAll('.dsh-mmd-view-control');
-    const codeButton = viewControls[0];
-    const diagramButton = viewControls[1];
-    const editButton = viewControls[2];
+    const [diagramButton, codeButton, editButton] = viewControls;
+    assert.equal(diagramButton.parentElement.getAttribute('aria-label'), 'Mermaid 视图选项');
     assert.equal(codeButton.textContent, '代码');
     assert.equal(diagramButton.textContent, '图形');
     assert.equal(editButton.textContent, '编辑');
@@ -28,26 +27,29 @@ test('renders localized accessible cards and recovers from errors', async () => 
     assert.equal(card.dataset.view, 'code');
     assert.equal(codeButton.getAttribute('aria-pressed'), 'true');
     assert.equal(card.querySelector('.dsh-mmd-code')?.textContent, 'flowchart LR\nA-->B');
-    const diagramActions = card.querySelectorAll('.dsh-mmd-diagram-action');
-    const actionSlot = card.querySelector('.dsh-mmd-action-slot');
-    assert.notEqual(window.getComputedStyle(diagramActions[0]).display, 'none');
-    assert.notEqual(window.getComputedStyle(diagramActions[1]).display, 'none');
-    assert.equal(diagramActions[0].parentElement, actionSlot);
-    assert.equal(diagramActions[1].parentElement, actionSlot);
+    const [svgButton, fullscreenButton] = card.querySelectorAll('.dsh-mmd-diagram-action');
+    const fileActions = card.querySelector('.dsh-mmd-file-actions');
+    const exportMenu = fileActions.querySelector('.dsh-mmd-export-list');
+    assert.equal(svgButton.parentElement, exportMenu);
+    assert.equal(exportMenu.getAttribute('popover'), 'auto');
+    assert.deepEqual([...exportMenu.children].map((button) => button.textContent), ['下载 SVG', '下载 PNG', '下载 .mmd']);
+    assert.equal(svgButton.disabled, false);
+    assert.equal(window.getComputedStyle(fullscreenButton.closest('.dsh-mmd-preview')).display, 'none');
+    assert.equal(card.querySelector('.dsh-mmd-feedback').parentElement, card);
     diagramButton.click();
     assert.equal(card.dataset.view, 'diagram');
     assert.equal(diagramButton.getAttribute('aria-pressed'), 'true');
-    assert.doesNotMatch(
-      document.getElementById('dsh-mermaid/css')?.textContent || '',
-      /\[data-view='code'\]\[data-state='ok'\] \.dsh-mmd-diagram-action\{display:none\}/,
-    );
+    assert.equal(fullscreenButton.parentElement.getAttribute('aria-label'), '图形查看工具');
+    assert.equal(card.querySelector('.dsh-mmd-error-actions').hidden, true);
 
     editButton.click();
     assert.equal(card.dataset.view, 'edit');
     assert.equal(editButton.getAttribute('aria-pressed'), 'true');
     assert.equal(card.querySelector('.dsh-mmd-textarea')?.value, 'flowchart LR\nA-->B');
     assert.equal(window.getComputedStyle(card.querySelector('.dsh-mmd-editor')).display, 'flex');
-    assert.equal(window.getComputedStyle(card.querySelector('.dsh-mmd-pane')).display, 'block');
+    assert.notEqual(window.getComputedStyle(card.querySelector('.dsh-mmd-pane')).display, 'none');
+    assert.equal(card.querySelector('.dsh-mmd-editor .dsh-mmd-panel-head').textContent, 'Mermaid 源码恢复原文');
+    assert.equal(card.querySelector('.dsh-mmd-preview-label').textContent, '图形预览');
 
     document.documentElement.lang = 'en-US';
     await wait(10);
@@ -55,6 +57,7 @@ test('renders localized accessible cards and recovers from errors', async () => 
     assert.equal(codeButton.textContent, 'Code');
     assert.equal(diagramButton.textContent, 'Diagram');
     assert.equal(editButton.textContent, 'Edit');
+    assert.equal(svgButton.textContent, 'Download SVG');
     document.documentElement.lang = 'zh-CN';
     await wait(10);
 
@@ -65,6 +68,8 @@ test('renders localized accessible cards and recovers from errors', async () => 
     assert.equal(invalidCard?.dataset.view, 'edit');
     assert.match(invalidCard?.querySelector('.dsh-mmd-error')?.textContent || '', /渲染失败/);
     assert.equal(invalidCard?.querySelector('.dsh-mmd-retry').hidden, true);
+    assert.equal(invalidCard?.querySelector('.dsh-mmd-error-actions').hidden, false);
+    assert.equal(invalidCard?.querySelector('.dsh-mmd-preview .dsh-mmd-error')?.parentElement.className, 'dsh-mmd-feedback');
     assert.equal(invalidCard?.querySelector('[role="status"]')?.textContent, '图表渲染失败，已显示源代码。');
     const invalidViewControls = invalidCard?.querySelectorAll('.dsh-mmd-view-control') || [];
     assert.equal(invalidViewControls[0].hidden, false);
@@ -94,7 +99,7 @@ test('renders localized accessible cards and recovers from errors', async () => 
     code.textContent = 'flowchart LR\nA-->FINAL';
     await wait(700);
     assert.equal(card.querySelector('.dsh-mmd-pane')?.dataset.state, 'ok');
-    assert.equal(window.getComputedStyle(codeButton).minHeight, '28px');
+    assert.equal(window.getComputedStyle(codeButton).minHeight, '30px');
   } finally {
     await harness.cleanup();
   }

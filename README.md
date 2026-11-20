@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md) | English
 
-Render Mermaid code blocks as interactive SVG diagrams in **DeepSeek Harness Web and Desktop**. Switch between source, diagram, and an inline editor, explore large diagrams in fullscreen, and export SVG or Mermaid source without leaving the conversation.
+Render Mermaid code blocks as interactive SVG diagrams in **DeepSeek Harness Web and Desktop**. Switch between source, diagram, and an inline editor, explore large diagrams in fullscreen, and export SVG, PNG, or Mermaid source from the conversation.
 
 [![npm version](https://img.shields.io/npm/v/dsh-mermaid.svg)](https://www.npmjs.com/package/dsh-mermaid)
 
@@ -45,20 +45,24 @@ flowchart LR
 ```
 ````
 
-The block opens in **Diagram** view by default. Use **Code / Diagram / Edit** to switch views. The plugin also recognizes `mermaidjs` and `mmd` fences; inline code is left unchanged.
+The block opens in **Diagram** view by default. Use **Diagram / Code / Edit** at the left of the card header to switch views. The plugin also recognizes `mermaidjs` and `mmd` fences; inline code is left unchanged.
+
+On hosts with the Markdown fence slot, an active reply shows the host's source block until generation finishes. In **Code** view, source updates are shown immediately and the preview updates when you open **Diagram** or **Edit**.
 
 ### 3. Edit the source
 
-- **Edit** opens a source editor next to the rendered diagram. In narrow windows the editor and preview stack vertically. Changes re-render after a short debounce.
+- **Edit** opens a source panel alongside the diagram preview. On narrow cards the preview moves below the source. Changes re-render after a short debounce, and rendering messages appear in the preview panel.
 - The draft is local to this page and is never written back to the sent message. Refreshing the page or rebuilding the card discards it.
-- While a new source is rendering, or when it has a syntax error, the last successful diagram stays visible with a notice. **Copy** and **Download .mmd** always use the raw draft, including comments and whitespace. **Reset** restores the message source.
+- While a new source is rendering, or when it has a syntax error, the last successful diagram stays visible with a notice. **Copy source** and **.mmd** always use the raw draft, including comments and whitespace. **Restore original** in the source panel restores the message source.
 - The initial parse error case still opens in **Edit**, so a block that failed to render can be repaired in place.
 
 ### 4. Explore and export
 
-- **Fullscreen** opens a viewer with mouse-wheel zoom, dragging, 100% reset, and fit-to-window controls. Press `Esc` to close it.
-- **Download SVG** saves the rendered diagram as a standalone file.
-- Fullscreen and SVG download are disabled while the preview does not match the draft, so an old diagram cannot be exported as if it were current.
+- Use **− / Fit card / +** above the preview in **Diagram** and **Edit**. Zooming keeps the card height steady. When the diagram extends beyond the canvas, drag it to pan horizontally or vertically.
+- **Fullscreen**, above the preview in **Diagram** and **Edit**, opens a viewer with mouse-wheel zoom, dragging, 100% reset, and fit-to-window controls. Press `Esc` to close it.
+- Open **Export** in the card header to download the entire diagram as SVG or PNG, or the current source as `.mmd`. PNG preserves transparency and uses up to 2× the SVG dimensions, subject to an 8,192-pixel edge and 16-megapixel area limit.
+- Fullscreen, SVG, and PNG require an up-to-date preview. The `.mmd` download remains available while the draft is rendering or contains an error.
+- **Retry rendering** reruns a failed renderer operation on the current source. **Copy diagnostics** copies the diagram type, Mermaid version, stage, and retry count.
 
 ![Fullscreen English Mermaid diagram with zoom, reset, fit-to-window, and close controls](docs/images/fullscreen-en.jpg)
 
@@ -140,7 +144,7 @@ For Web, you can replace the leading `dsh` with `npx.cmd --yes @deepseek-ai/dsh`
 | --- | --- |
 | No Code / Diagram / Edit controls | Confirm that the plugin is installed in the profile you are using, restart DSH, and refresh the page. Use an explicit `mermaid` fenced block. |
 | Source appears with an error | Check the Mermaid syntax and the displayed error. Split diagrams that exceed 50,000 characters or 2,000 lines. The **Edit** view remains available for repairs. |
-| Preview says it was not updated | The draft is invalid or still rendering. The last successful diagram is intentionally kept; fix the source, wait for the debounce, or use **Reset**. |
+| Preview says it was not updated | The draft is invalid or still rendering. The previous diagram stays available. Fix the source, wait for the preview to update, or use **Restore original**. |
 | Fullscreen or download is unavailable | These actions require a successfully rendered SVG. Resolve any rendering error first. |
 | GitHub installation reports a blocked build script | Follow the build-script guidance under **Install from GitHub** below. |
 

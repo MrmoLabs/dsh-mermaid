@@ -1,6 +1,8 @@
 import { Window } from 'happy-dom';
 import { createTooltipPositioner } from '../src/tooltip.js';
 import { preserveViewPosition } from '../src/scroll.js';
+import { createFullscreenViewer } from '../src/viewer.js';
+import { createInlinePreview } from '../src/inline-preview.js';
 import { normalizeRenderConfig } from '../src/render-config.js';
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -9,7 +11,7 @@ class SyntheticSourceError extends Error {}
 
 async function createClientHarness({
   initialSource = 'flowchart LR\nA-->B', locale = 'zh-CN', bindFunctions, injectRuntime = true,
-  config, fetchConfig, initializeRuntime, renderRuntime,
+  config, fetchConfig, initializeRuntime, renderRuntime, rasterizeSvg,
 } = {}) {
   const window = new Window({ url: 'http://localhost/' });
   const previousGlobals = new Map();
@@ -69,6 +71,8 @@ async function createClientHarness({
       initializeRuntime?.(options);
     },
     isSourceError: (error) => error instanceof SyntheticSourceError,
+    createInlinePreview,
+    rasterizeSvg,
     async render(_id, source) {
       state.renderCalls.push(source);
       activeRenders += 1;
@@ -92,7 +96,7 @@ async function createClientHarness({
         activeRenders -= 1;
       }
     },
-  }, createTooltipPositioner, preserveViewPosition) : null;
+  }, createTooltipPositioner, preserveViewPosition, createFullscreenViewer) : null;
 
   function addCodeBlock(source = '', className = 'language-mermaid') {
     const pre = document.createElement('pre');

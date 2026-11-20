@@ -2,6 +2,9 @@ import mermaid from 'mermaid';
 import { diagramBodyOffset } from './detection.js';
 export { createTooltipPositioner } from './tooltip.js';
 export { preserveViewPosition } from './scroll.js';
+export { createFullscreenViewer } from './viewer.js';
+export { createInlinePreview } from './inline-preview.js';
+export { rasterizeSvg } from './png-export.js';
 
 const FLOWCHART_HEADER = /^(?:flowchart|graph)\b/;
 // Skip existing strings, comments and node metadata. Capture simple edge and rectangle labels.
@@ -69,14 +72,26 @@ function recoverFlowchartSource(source, error) {
   return normalized.length <= mermaid.mermaidAPI.getConfig().maxTextSize ? normalized : null;
 }
 
+async function renderInContainer(id, source) {
+  const container = document.createElement('div');
+  container.setAttribute('aria-hidden', 'true');
+  container.style.cssText = 'position:absolute;inset:0 auto auto 0;width:100%;height:0;overflow:hidden;visibility:hidden;pointer-events:none';
+  document.body.append(container);
+  try {
+    return await mermaid.render(id, source, container);
+  } finally {
+    container.remove();
+  }
+}
+
 async function renderMermaid(id, source) {
   try {
-    return await mermaid.render(id, source);
+    return await renderInContainer(id, source);
   } catch (error) {
     const normalized = recoverFlowchartSource(source, error);
     if (normalized) {
       try {
-        return await mermaid.render(id, normalized);
+        return await renderInContainer(id, normalized);
       } catch (retryError) {
         // Keep the original syntax diagnostic unless the repaired input failed to draw.
         if (!await isSourceFailure(retryError, normalized)) throw retryError;

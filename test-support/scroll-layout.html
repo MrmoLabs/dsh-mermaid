@@ -29,14 +29,17 @@
 <script type="module">
   // After npm run build, serve the repository over HTTP and open this page in a
   // real browser. Happy DOM does not calculate overflow or scroll geometry.
-  import runtime, { createTooltipPositioner, preserveViewPosition } from '../lib/mermaid-runtime.js';
+  import runtime, { createInlinePreview, createTooltipPositioner, preserveViewPosition } from '../lib/mermaid-runtime.js';
   import { apply, setMermaidRuntimeForTesting } from '../src/client.js';
+  import { createFullscreenViewer } from '../src/viewer.js';
 
   const report = window.__scrollLayoutReport = { checks: [], complete: false };
   const pause = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   const scroller = document.querySelector('main');
   let dispose;
-  const restoreRuntime = setMermaidRuntimeForTesting(runtime, createTooltipPositioner, preserveViewPosition);
+  const restoreRuntime = setMermaidRuntimeForTesting({
+    initialize: runtime.initialize.bind(runtime), render: runtime.render.bind(runtime), createInlinePreview,
+  }, createTooltipPositioner, preserveViewPosition, createFullscreenViewer);
   const mount = () => apply({ effect(callback) { dispose = callback(); } });
   const check = (label, condition, detail) => {
     report.checks.push({ label, pass: Boolean(condition), detail });
@@ -61,7 +64,47 @@
     mount();
     await waitRendered();
     const card = document.querySelector('.dsh-mmd');
-    const controls = [...card.querySelectorAll('button')];
+    const codeButton = card.querySelector('.dsh-mmd-view-control[data-view="code"]');
+    const diagramButton = card.querySelector('.dsh-mmd-view-control[data-view="diagram"]');
+    const fullscreenButton = card.querySelector('.dsh-mmd-fullscreen');
+    const editButton = card.querySelector('.dsh-mmd-view-control[data-view="edit"]');
+    const pane = card.querySelector('.dsh-mmd-pane');
+    const [zoomOut, fit, zoomIn] = card.querySelectorAll('.dsh-mmd-inline-zoom button');
+    const toolbar = card.querySelector('.dsh-mmd-bar');
+    card.style.maxWidth = '240px';
+    await pause();
+    const bounds = toolbar.getBoundingClientRect();
+    const viewBounds = toolbar.querySelector('.dsh-mmd-views').getBoundingClientRect();
+    const fileBounds = toolbar.querySelector('.dsh-mmd-file-actions').getBoundingClientRect();
+    check('narrow cards wrap whole groups within the toolbar', fileBounds.top >= viewBounds.bottom && fileBounds.right <= bounds.right);
+    card.style.removeProperty('max-width');
+    await pause();
+    for (const button of [diagramButton, editButton]) {
+      button.click();
+      await pause();
+      const measureZoomLayout = () => ({
+        canvasHeight: pane.getBoundingClientRect().height,
+        cardHeight: card.getBoundingClientRect().height,
+        scrollTop: scroller.scrollTop,
+      });
+      const beforeZoom = measureZoomLayout();
+      check(`${button.dataset.view} canvas uses viewport-based height`, Math.abs(beforeZoom.canvasHeight - Math.min(360, innerHeight * 0.4)) < 0.5, beforeZoom);
+      zoomIn.click();
+      zoomIn.click();
+      zoomIn.click();
+      await pause();
+      const overflows = pane.scrollWidth > pane.clientWidth || pane.scrollHeight > pane.clientHeight;
+      check(`${button.dataset.view} zoom provides a scrollable canvas`, overflows && pane.tabIndex === 0);
+      check(`${button.dataset.view} zoom does not shift the card or chat`, JSON.stringify(measureZoomLayout()) === JSON.stringify(beforeZoom), {beforeZoom, afterZoom: measureZoomLayout()});
+      fit.click();
+      check(`${button.dataset.view} fit resets zoom and scroll`, pane.style.getPropertyValue('--dsh-mmd-inline-scale') === '1' && pane.scrollLeft === 0 && pane.scrollTop === 0);
+      zoomOut.click();
+      await pause();
+      check(`${button.dataset.view} zooming out keeps the card size`, JSON.stringify(measureZoomLayout()) === JSON.stringify(beforeZoom));
+      fit.click();
+    }
+    diagramButton.click();
+    await pause();
     const status = card.querySelector('[role="status"]');
     check('live announcement retained', status.getAttribute('aria-live') === 'polite' && status.textContent.length > 0, status.textContent);
     check('conversation remains scrollable', scroller.scrollHeight > scroller.clientHeight, scroller.scrollHeight);
@@ -73,11 +116,11 @@
     scroller.scrollTop += card.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 50;
     await pause();
     measure('diagram toolbar near top');
-    const toolbarTop = card.querySelector('.dsh-mmd-bar').getBoundingClientRect().top;
-    controls[0].click();
+    const toolbarTop = toolbar.getBoundingClientRect().top;
+    codeButton.click();
     await pause();
     measure('switch to code');
-    const codeShift = card.querySelector('.dsh-mmd-bar').getBoundingClientRect().top - toolbarTop;
+    const codeShift = toolbar.getBoundingClientRect().top - toolbarTop;
     // A shorter view can clamp scrollTop; preserving a position beyond the new
     // maximum is impossible. It must never redirect the scroll to the document.
     check('root scroll unchanged', window.scrollY === 0, { codeShift, scrollY });
@@ -86,18 +129,18 @@
       await pause();
       measure(`code scroll ${fraction}`);
     }
-    controls[1].click();
+    diagramButton.click();
     await pause();
     measure('back to diagram');
-    controls[2].focus();
-    controls[2].click();
+    fullscreenButton.focus();
+    fullscreenButton.click();
     await pause();
     check('fullscreen opened', !document.querySelector('.dsh-mmd-viewer').hidden);
     measure('fullscreen');
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await pause();
     measure('after fullscreen');
-    check('focus restored', document.activeElement === controls[2]);
+    check('focus restored', document.activeElement === fullscreenButton);
     // Also verify a host that scrolls the document rather than a nested pane.
     scroller.scrollTop = 0;
     document.querySelector('#app').style.height = 'auto';
@@ -110,10 +153,10 @@
     window.scrollTo(0, card.getBoundingClientRect().top + scrollY - 50);
     await pause();
     measureDocument('document scroll near toolbar');
-    controls[0].click();
+    codeButton.click();
     await pause();
     measureDocument('document code view');
-    controls[1].click();
+    diagramButton.click();
     await pause();
     measureDocument('document diagram view');
     document.querySelector('#app').style.removeProperty('height');

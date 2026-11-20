@@ -35,7 +35,7 @@ test('keeps the toolbar fixed when switching inside a scroll container', async (
     scroller.append(card, pre);
     toolbar.getBoundingClientRect = () => rectWithTop(card.dataset.view === 'diagram' ? 100 : 340);
 
-    card.querySelectorAll('.dsh-mmd-view-control')[0].click();
+    card.querySelector('.dsh-mmd-view-control[data-view="code"]').click();
     await wait(20);
 
     assert.equal(card.dataset.view, 'code');
@@ -56,7 +56,7 @@ test('keeps the toolbar fixed when the document is the scroll container', async 
     window.scrollBy = (...args) => scrollCalls.push(args);
     toolbar.getBoundingClientRect = () => rectWithTop(card.dataset.view === 'diagram' ? 120 : -180);
 
-    card.querySelectorAll('.dsh-mmd-view-control')[0].click();
+    card.querySelector('.dsh-mmd-view-control[data-view="code"]').click();
     await wait(20);
 
     assert.equal(card.dataset.view, 'code');

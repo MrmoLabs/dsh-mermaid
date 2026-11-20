@@ -17,6 +17,7 @@ await build({
 
 const runtimeBundle = await readFile('lib/mermaid-runtime.js');
 const runtimeRevision = createHash('sha256').update(runtimeBundle).digest('hex').slice(0, 12);
+const mermaidVersion = JSON.parse(await readFile('node_modules/mermaid/package.json', 'utf8')).version;
 
 await build({
   entryPoints: ['src/settings-runtime.js'], outfile: 'lib/settings-runtime.js',
@@ -35,6 +36,7 @@ await build({
   legalComments: 'external',
   define: {
     __DSH_MERMAID_RUNTIME_REV__: JSON.stringify(runtimeRevision),
+    __DSH_MERMAID_VERSION__: JSON.stringify(mermaidVersion),
     __DSH_MERMAID_SETTINGS_REV__: JSON.stringify(settingsRevision),
   },
   banner: {

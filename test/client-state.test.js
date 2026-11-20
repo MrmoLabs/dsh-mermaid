@@ -27,7 +27,7 @@ test('view controls work before the first runtime import', async () => {
     await waitFor(harness, () => document.querySelector('.dsh-mmd'));
     const card = document.querySelector('.dsh-mmd');
     assert.equal(card.querySelector('svg'), null);
-    const [codeButton, diagramButton] = card.querySelectorAll('.dsh-mmd-view-control');
+    const [diagramButton, codeButton] = card.querySelectorAll('.dsh-mmd-view-control');
     codeButton.click();
     assert.equal(card.dataset.view, 'code');
     assert.equal(codeButton.getAttribute('aria-pressed'), 'true');
@@ -57,7 +57,7 @@ test('retries a failed runtime import without changing source or view', async ()
     await waitFor(harness, () => document.querySelector('.dsh-mmd[data-state="error"]'));
     const card = document.querySelector('.dsh-mmd');
     const retry = card.querySelector('.dsh-mmd-retry');
-    const [codeButton, diagramButton] = card.querySelectorAll('.dsh-mmd-view-control');
+    const [diagramButton, codeButton] = card.querySelectorAll('.dsh-mmd-view-control');
     assert.equal(card.dataset.view, 'diagram');
     assert.match(card.querySelector('.dsh-mmd-pane').textContent, /渲染器加载失败/);
     assert.equal(retry.hidden, false);
@@ -115,6 +115,28 @@ test('reports an empty rendered diagram and keeps its source editable', async ()
     assert.equal(pane.dataset.state, 'stale');
     assert.equal(card.querySelector('.dsh-mmd-notice').textContent, 'The diagram is empty. The last successful preview is still shown.');
     assert.ok([...diagramActions(card)].every((button) => button.disabled));
+  } finally { await harness.cleanup(); }
+});
+
+test('updates source in Code view and defers layout until Diagram is opened', async () => {
+  const harness = await createClientHarness();
+  try {
+    const { code, pre, state } = harness;
+    await waitFor(harness, () => pre.previousElementSibling?.dataset.state === 'ok');
+    const card = pre.previousElementSibling;
+    const [showDiagram, showCode] = card.querySelectorAll('.dsh-mmd-view-control');
+    showCode.click();
+    const updated = 'flowchart LR\nA-->C';
+    code.textContent = updated;
+    await waitFor(harness, () => card.dataset.state === 'pending');
+    await harness.wait(650);
+    assert.equal(card.querySelector('.dsh-mmd-code').textContent, updated);
+    assert.equal(diagramActions(card)[0].disabled, true);
+    assert.equal(state.renderCalls.length, 1);
+    showDiagram.click();
+    await waitFor(harness, () => card.dataset.state === 'ok');
+    assert.equal(state.renderCalls.at(-1), updated);
+    assert.equal(state.renderCalls.length, 2);
   } finally { await harness.cleanup(); }
 });
 

@@ -183,13 +183,15 @@ F --> A`;
     }
 
     const drawError = new Error('drawing failed');
-    runtime.render = async (_id, source) => {
+    runtime.render = async (_id, source, container) => {
+      container.append(document.createElementNS('http://www.w3.org/2000/svg', 'svg'));
       await runtime.parse(source);
       throw drawError;
     };
     // A recognized label error can be repaired successfully even when layout then fails.
     for (const source of [labeledFlowchart, embeddedQuotes]) {
       await assert.rejects(renderMermaid('draw-error', source), (error) => error === drawError && !isMermaidSourceError(error));
+      assert.equal(document.body.querySelector('svg'), null, 'the failed render left a staging SVG');
     }
   } finally {
     delete globalThis.window;

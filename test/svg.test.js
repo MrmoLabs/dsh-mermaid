@@ -1,7 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
-import { rewriteSvgIds } from '../src/svg.js';
+import { prepareSvgPreview, rewriteSvgIds } from '../src/svg.js';
+
+test('measures visible SVGs and expands a clipped Journey viewBox', async () => {
+  const window = new Window();
+  try {
+    const svg = window.document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    Object.defineProperty(svg, 'viewBox', { value: { baseVal: { x: 0, y: 0, width: 100, height: 50 } } });
+    svg.getClientRects = () => [];
+    svg.getBBox = () => ({ x: 0, y: 0, width: 0, height: 0 });
+    assert.equal(prepareSvgPreview(svg, 'journey'), true);
+    svg.getClientRects = () => [{}];
+    assert.equal(prepareSvgPreview(svg, 'journey'), false);
+    svg.getBBox = () => ({ x: -12, y: 4, width: 125, height: 28 });
+    assert.equal(prepareSvgPreview(svg, 'journey'), true);
+    assert.equal(svg.getAttribute('viewBox'), '-12 0 125 50');
+  } finally { await window.happyDOM.close(); }
+});
 
 test('fullscreen SVG remaps complete CSS IDs and gradient URLs with shared prefixes', async () => {
   const window = new Window();

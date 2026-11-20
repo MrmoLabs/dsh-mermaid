@@ -84,6 +84,8 @@ async function fixture(name, { modern = false, expectedFill } = {}) {
   await card.getByRole('button', { name: 'Fullscreen', exact: true }).click();
   await page.locator('.dsh-mmd-viewer-stage svg').waitFor();
   await page.getByRole('button', { name: 'Close fullscreen viewer' }).click();
+  const exportButton = card.getByRole('button', { name: /^Export/ });
+  if (await exportButton.isVisible()) await exportButton.click();
   const downloaded = page.waitForEvent('download');
   await card.getByRole('button', { name: 'Download SVG', exact: true }).click();
   const download = await downloaded;
@@ -97,8 +99,10 @@ async function fixture(name, { modern = false, expectedFill } = {}) {
     await page.waitForFunction(() => document.querySelector('.dsh-mmd[data-state="ok"] svg')?.textContent.includes('Edited after upgrade'));
     await editor.fill('flowchart LR\nA-->');
     await page.locator('.dsh-mmd[data-state="error"]').waitFor();
+    if (await exportButton.isVisible()) await exportButton.click();
     assert.equal(await card.getByRole('button', { name: 'Download SVG', exact: true }).isDisabled(), true);
-    await card.getByRole('button', { name: 'Reset', exact: true }).click();
+    if (await exportButton.isVisible()) await page.keyboard.press('Escape');
+    await card.getByRole('button', { name: /^(Reset|Restore original)$/ }).click();
     await page.locator('.dsh-mmd[data-state="ok"]').waitFor();
   }
   await page.screenshot({ path: join(directory, `${name}.png`), fullPage: true });

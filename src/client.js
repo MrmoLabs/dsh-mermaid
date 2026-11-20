@@ -6,10 +6,10 @@ import {
 } from './detection.js';
 import { resolveLocale, translate } from './i18n.js';
 import { CSS } from './styles.js';
-import { ensureSvgAccessibility, hasSvgContent, localizeGeneratedSvgTitle, serializeSvg } from './svg.js';
-import { createFullscreenViewer } from './viewer.js';
+import { ensureSvgAccessibility, hasSvgContent, localizeGeneratedSvgTitle, prepareSvgPreview, serializeSvg } from './svg.js';
 import { DEFAULT_STYLE, effectiveStyle, styleKey } from './render-config.js';
 import { createStyleLoader } from './style-loader.js';
+import { FENCE_SELECTOR, registerNativeFences } from './fence-registration.js';
 import { registerNativeSettings } from './settings-registration.js';
 
 const TAG_ID = 'dsh-mermaid/css';
@@ -17,62 +17,81 @@ const STABLE_MS = 300;
 const RENDER_DEBOUNCE_MS = 500;
 const MAX_SOURCE_CHARS = 50_000;
 const MAX_SOURCE_LINES = 2_000;
+const RUNTIME_LOAD_TIMEOUT_MS = 12_000;
 const RETRYABLE_RENDER_ERRORS = new Set(['runtimeLoadFailed', 'runtimeRenderFailed', 'missingSvg']);
 const RUNTIME_REVISION = typeof __DSH_MERMAID_RUNTIME_REV__ === 'undefined'
   ? 'development'
   : __DSH_MERMAID_RUNTIME_REV__;
 const RUNTIME_URL = `/dsh-mermaid/mermaid-runtime.js?rev=${RUNTIME_REVISION}`;
+const ENGINE_VERSION = typeof __DSH_MERMAID_VERSION__ === 'undefined' ? 'development' : __DSH_MERMAID_VERSION__;
 
 let uid = 0;
 let currentLocale = 'en';
 let styleTag = null;
 let mermaidRuntime = null;
 let runtimePromise = null;
+let runtimeRetry = 0;
 let renderQueueActive = false;
 let tooltipPositioner = null;
 let tooltipPositionerFactory = null;
 let preserveViewPosition = null;
+let fullscreenViewer = null;
 let mount = null;
 let mountSequence = 0;
 const entries = new WeakMap();
 const wrappers = new Set();
 const renderQueue = [];
 
-function setMermaidRuntimeForTesting(runtime, positionerFactory, viewPositioner) {
+function setMermaidRuntimeForTesting(runtime, positionerFactory, viewPositioner, viewerFactory) {
   const previous = mermaidRuntime;
   const previousPromise = runtimePromise;
   const previousPositionerFactory = tooltipPositionerFactory;
   const previousViewPositioner = preserveViewPosition;
+  const previousViewer = fullscreenViewer;
   mermaidRuntime = runtime;
   runtimePromise = Promise.resolve(runtime);
   tooltipPositionerFactory = positionerFactory;
   preserveViewPosition = viewPositioner;
+  fullscreenViewer = viewerFactory?.({ t }) ?? null;
   return () => {
     mermaidRuntime = previous;
     runtimePromise = previousPromise;
     tooltipPositionerFactory = previousPositionerFactory;
     preserveViewPosition = previousViewPositioner;
+    fullscreenViewer = previousViewer;
   };
 }
 
 function loadMermaidRuntime() {
   if (mermaidRuntime) return Promise.resolve(mermaidRuntime);
   if (!runtimePromise) {
-    runtimePromise = import(RUNTIME_URL)
+    let timeout;
+    const url = runtimeRetry ? `${RUNTIME_URL}&retry=${runtimeRetry}` : RUNTIME_URL;
+    const deadline = new Promise((_, reject) => {
+      timeout = setTimeout(() => {
+        runtimeRetry += 1;
+        reject(new Error('Mermaid runtime load timed out'));
+      }, RUNTIME_LOAD_TIMEOUT_MS);
+    });
+    runtimePromise = Promise.race([import(url), deadline])
       .then((module) => {
         mermaidRuntime = {
           initialize: module.default.initialize,
           render: module.renderMermaid,
           isSourceError: module.isMermaidSourceError,
+          createInlinePreview: module.createInlinePreview,
+          rasterizeSvg: module.rasterizeSvg,
         };
         tooltipPositionerFactory = module.createTooltipPositioner;
         preserveViewPosition = module.preserveViewPosition;
+        fullscreenViewer = module.createFullscreenViewer?.({ t }) ?? null;
         return mermaidRuntime;
       })
       .catch((error) => {
         runtimePromise = null;
         throw error;
-      });
+      })
+      .finally(() => clearTimeout(timeout));
   }
   return runtimePromise;
 }
@@ -85,8 +104,6 @@ function t(key, parameters) {
   return translate(currentLocale, key, parameters);
 }
 
-const fullscreenViewer = createFullscreenViewer({ t });
-
 function detectLocale() {
   const languages = [...(navigator.languages || [])];
   if (navigator.language && !languages.includes(navigator.language)) languages.push(navigator.language);
@@ -95,12 +112,16 @@ function detectLocale() {
 
 function currentRawSource(entry) {
   if (entry.draftDirty) return entry.draft;
-  return entry.code.textContent || '';
+  return messageSource(entry);
+}
+
+function messageSource(entry) {
+  return entry.nativeSource ?? entry.code.textContent ?? '';
 }
 
 function syncDraftFromMessage(entry) {
   if (entry.draftDirty) return false;
-  const raw = entry.code.textContent || '';
+  const raw = messageSource(entry);
   entry.draft = raw;
   entry.codePane.textContent = raw;
   if (entry.editor.value !== raw) entry.editor.value = raw;
@@ -155,8 +176,21 @@ function setActionAvailability(entry) {
   const fresh = isPreviewFresh(entry);
   entry.btnFullscreen.disabled = !fresh;
   entry.btnDownloadSvg.disabled = !fresh;
+  entry.btnDownloadPng.disabled = !fresh || entry.pngPending;
   entry.btnReset.disabled = !entry.draftDirty;
   entry.btnRetry.hidden = !RETRYABLE_RENDER_ERRORS.has(entry.messageKey);
+  entry.errorActions.hidden = entry.wrapper.dataset.state !== 'error';
+  const scale = entry.inlinePreview?.scale;
+  entry.zoomOut.disabled = !scale || scale <= 0.5;
+  entry.zoomIn.disabled = !scale || scale >= 8;
+  entry.zoomFit.disabled = !scale;
+}
+
+function zoomInline(entry, multiplier) {
+  const preview = entry.inlinePreview;
+  if (!preview) return;
+  preview.zoom(multiplier ? preview.scale * multiplier : 1);
+  setActionAvailability(entry);
 }
 
 function updateNotice(entry) {
@@ -195,24 +229,36 @@ function setPreviewStale(entry, key, parameters) {
 }
 
 function localizeEntry(entry) {
-  entry.bar.setAttribute('aria-label', t('viewOptions'));
+  entry.views.setAttribute('aria-label', t('viewOptions'));
+  entry.fileActions.setAttribute('aria-label', t('fileActions'));
+  entry.previewControls.setAttribute('aria-label', t('previewControls'));
+  entry.pane.setAttribute('aria-label', t('diagramCanvas'));
   entry.btnDiagram.textContent = t('diagramView');
   entry.btnCode.textContent = t('codeView');
   entry.btnEdit.textContent = t('editView');
   entry.btnFullscreen.textContent = t('fullscreen');
+  entry.exportButton.textContent = t('export');
+  entry.exportMenu.setAttribute('aria-label', t('export'));
   entry.btnDownloadSvg.textContent = t('downloadSvg');
+  entry.btnDownloadPng.textContent = t('downloadPng');
   entry.btnCopy.textContent = t('copySource');
   entry.btnDownloadMmd.textContent = t('downloadMmd');
   entry.btnReset.textContent = t('reset');
   entry.btnRetry.textContent = t('retryRender');
+  entry.btnDiagnostics.textContent = t('copyDiagnostics');
+  entry.zoomOut.setAttribute('aria-label', t('zoomCardOut'));
+  entry.zoomFit.textContent = t('fitCard');
+  entry.zoomIn.setAttribute('aria-label', t('zoomCardIn'));
   entry.editor.setAttribute('aria-label', t('editorLabel'));
+  entry.sourceLabel.textContent = t('sourceLabel');
+  entry.previewLabel.textContent = t('previewLabel');
   entry.draftHint.textContent = t('draftHint');
   if (entry.statusKey) entry.statusEl.textContent = t(entry.statusKey, entry.statusParameters);
   updateNotice(entry);
   updateConfigWarning(entry);
   localizeGeneratedSvgTitle(
     entry.pane.querySelector('svg'),
-    t('diagramTitle', { type: entry.badge.textContent || 'mermaid' }),
+    t('diagramTitle', { type: entry.type }),
   );
   if (entry.messageKey && !entry.pane.querySelector('svg') && entry.pane.dataset.state !== 'ok') {
     const message = t(entry.messageKey, entry.messageParameters);
@@ -228,7 +274,7 @@ function refreshLocale() {
     const entry = entries.get(wrapper._dshCode);
     if (entry) localizeEntry(entry);
   }
-  fullscreenViewer.localize();
+  fullscreenViewer?.localize();
 }
 
 function initializeMermaid(runtime, style) {
@@ -258,6 +304,7 @@ function removeCss() {
 function isMermaidCodeBlock(code) {
   const pre = code?.closest?.('pre');
   if (!pre) return false;
+  if (code.closest('.dsh-mmd-native-fence') || (mount?.nativeFencesActive && code.closest(FENCE_SELECTOR))) return false;
   if (hasMermaidLanguage(code.classList)) return true;
   if (hasExplicitLanguage(code.classList)) return false;
   return isMermaidSource((code.textContent || '').trim());
@@ -269,12 +316,23 @@ function setView(entry, view) {
   entry.btnCode.setAttribute('aria-pressed', String(view === 'code'));
   entry.btnEdit.setAttribute('aria-pressed', String(view === 'edit'));
   if (view === 'edit') {
+    entry.preview.append(entry.feedback);
     if (!entry.draftDirty) syncDraftFromMessage(entry);
     if (entry.editor.value !== entry.draft) entry.editor.value = entry.draft;
-  } else if (view === 'code') {
-    entry.codePane.textContent = currentRawSource(entry);
+  } else {
+    if (entry.feedback.parentNode !== entry.wrapper) entry.body.before(entry.feedback);
+    if (view === 'code') entry.codePane.textContent = currentRawSource(entry);
   }
   setActionAvailability(entry);
+  if (view !== 'code' && entry.deferredRender) scheduleRender(entry, 0);
+  else if (view !== 'code' && entry.previewNeedsMeasurement && isPreviewFresh(entry)) {
+    entry.previewNeedsMeasurement = false;
+    const svg = entry.pane.querySelector('svg');
+    if (!prepareSvgPreview(svg, entry.renderedType)) {
+      svg.remove();
+      setEntryEmpty(entry, 'emptyDiagram');
+    } else entry.inlinePreview?.update(svg);
+  }
 }
 
 function setViewFromControl(entry, view) {
@@ -290,6 +348,7 @@ function setViewFromControl(entry, view) {
 function setEntryStatus(entry, key, parameters = {}) {
   entry.statusKey = key;
   entry.statusParameters = parameters;
+  entry.statusEl.className = key === 'pngExportFailed' ? 'dsh-mmd-export-error' : 'dsh-mmd-sr-only';
   entry.statusEl.textContent = t(key, parameters);
 }
 
@@ -304,26 +363,27 @@ function setEntryRendered(entry) {
   setNotice(entry, null);
   setEntryStatus(entry, 'rendered');
   setActionAvailability(entry);
-  if (fullscreenViewer.isOpenFor(entry)) fullscreenViewer.setUpdating(false);
+  if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.setUpdating(false);
 }
 
-function setEntryLoading(entry) {
+function setEntryLoading(entry, deferred = false) {
+  const key = deferred ? 'renderDeferred' : 'rendering';
   const hasSvg = Boolean(entry.pane.querySelector('svg'));
-  entry.wrapper.dataset.state = 'rendering';
+  entry.wrapper.dataset.state = deferred ? 'pending' : 'rendering';
   entry.errorEl.textContent = '';
-  entry.messageKey = 'rendering';
+  entry.messageKey = key;
   entry.messageParameters = {};
   if (hasSvg) {
     entry.pane.dataset.state = 'stale';
-    setNotice(entry, 'previewUpdating', {}, 'info');
+    setNotice(entry, deferred ? key : 'previewUpdating');
   } else {
     entry.pane.dataset.state = 'loading';
-    entry.pane.textContent = t('rendering');
-    setNotice(entry, null);
+    entry.pane.textContent = t(key);
+    setNotice(entry, deferred ? key : null);
   }
-  setEntryStatus(entry, 'rendering');
+  setEntryStatus(entry, key);
   setActionAvailability(entry);
-  if (fullscreenViewer.isOpenFor(entry)) fullscreenViewer.setUpdating(true);
+  if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.setUpdating(true);
 }
 
 function setEntryError(entry, key, parameters, statusKey = key) {
@@ -352,7 +412,7 @@ function setEntryError(entry, key, parameters, statusKey = key) {
     if (!RETRYABLE_RENDER_ERRORS.has(key) && entry.wrapper.dataset.view === 'diagram') setView(entry, 'edit');
   }
   setActionAvailability(entry);
-  if (fullscreenViewer.isOpenFor(entry)) fullscreenViewer.close();
+  if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.close();
 }
 
 function setEntryEmpty(entry, key = 'emptyDraft') {
@@ -373,40 +433,49 @@ function setEntryEmpty(entry, key = 'emptyDraft') {
   }
   setEntryStatus(entry, statusKey);
   setActionAvailability(entry);
+  if (key === 'emptyDiagram' && fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.close();
 }
 
-function downloadSvg(entry) {
+function downloadFile(entry, blob, type, extension, status) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `mermaid-${type}.${extension}`;
+  anchor.hidden = true;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  setEntryStatus(entry, status);
+}
+
+async function exportDiagram(entry, extension) {
+  if (extension === 'mmd') {
+    const source = currentRawSource(entry);
+    const type = diagramType(source.trim()) || diagramType(entry.lastRendered) || 'diagram';
+    downloadFile(entry, new Blob([source], { type: 'text/plain;charset=utf-8' }), type, extension, 'downloadedMmd');
+    return;
+  }
   if (!isPreviewFresh(entry)) return;
   const svg = entry.pane.querySelector('svg');
-  if (!svg) return;
-  const blob = new Blob([serializeSvg(svg)], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
   const type = diagramType(entry.lastRendered) || 'diagram';
-  anchor.href = url;
-  anchor.download = `mermaid-${type}.svg`;
-  anchor.hidden = true;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-  setEntryStatus(entry, 'downloaded');
-}
-
-function downloadMmd(entry) {
-  const source = currentRawSource(entry);
-  const type = diagramType(source.trim()) || diagramType(entry.lastRendered) || 'diagram';
-  const blob = new Blob([source], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `mermaid-${type}.mmd`;
-  anchor.hidden = true;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-  setEntryStatus(entry, 'downloadedMmd');
+  if (extension === 'svg') {
+    downloadFile(entry, new Blob([serializeSvg(svg)], { type: 'image/svg+xml;charset=utf-8' }), type, extension, 'downloaded');
+    return;
+  }
+  if (entry.pngPending) return;
+  entry.pngPending = true;
+  setActionAvailability(entry);
+  const isCurrent = () => entry.wrapper.isConnected && entry.pane.querySelector('svg') === svg && isPreviewFresh(entry);
+  try {
+    const blob = await mermaidRuntime.rasterizeSvg(svg);
+    if (isCurrent()) downloadFile(entry, blob, type, extension, 'downloadedPng');
+  } catch {
+    if (isCurrent()) setEntryStatus(entry, 'pngExportFailed');
+  } finally {
+    entry.pngPending = false;
+    if (entry.wrapper.isConnected) setActionAvailability(entry);
+  }
 }
 
 function copyWithFallback(text) {
@@ -426,19 +495,18 @@ function copyWithFallback(text) {
   if (!copied) throw new Error('Clipboard is unavailable.');
 }
 
-async function copySource(entry) {
-  const source = currentRawSource(entry);
+async function copyText(entry, text, status) {
   try {
-    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(source);
-    else copyWithFallback(source);
-    setEntryStatus(entry, 'copied');
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+    else copyWithFallback(text);
+    setEntryStatus(entry, status);
   } catch {
     setEntryStatus(entry, 'copyFailed');
   }
 }
 
 function resetDraft(entry) {
-  entry.draft = entry.code.textContent || '';
+  entry.draft = messageSource(entry);
   entry.draftDirty = false;
   entry.composing = false;
   entry.editor.value = entry.draft;
@@ -449,76 +517,106 @@ function resetDraft(entry) {
   scheduleRender(entry);
 }
 
-function createEntry(code) {
+function createButton(kind = '') {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = kind ? `dsh-mmd-btn ${kind}` : 'dsh-mmd-btn';
+  return button;
+}
+
+function createEntry(code, nativeSource) {
+  const raw = nativeSource ?? code.textContent ?? '';
   const wrapper = document.createElement('div');
   wrapper.className = 'dsh-mmd';
   wrapper.dataset.view = 'diagram';
 
   const bar = document.createElement('div');
   bar.className = 'dsh-mmd-bar';
-  bar.setAttribute('role', 'group');
-  const badge = document.createElement('span');
-  badge.className = 'dsh-mmd-badge';
-  badge.textContent = 'mermaid';
-  const btnDiagram = document.createElement('button');
-  btnDiagram.type = 'button';
-  btnDiagram.className = 'dsh-mmd-btn dsh-mmd-view-control';
+  const views = document.createElement('div');
+  views.className = 'dsh-mmd-views';
+  views.setAttribute('role', 'group');
+  const btnDiagram = createButton('dsh-mmd-view-control');
+  btnDiagram.dataset.view = 'diagram';
   btnDiagram.setAttribute('aria-pressed', 'true');
-  const btnCode = document.createElement('button');
-  btnCode.type = 'button';
-  btnCode.className = 'dsh-mmd-btn dsh-mmd-view-control';
+  const btnCode = createButton('dsh-mmd-view-control');
+  btnCode.dataset.view = 'code';
   btnCode.setAttribute('aria-pressed', 'false');
-  const btnEdit = document.createElement('button');
-  btnEdit.type = 'button';
-  btnEdit.className = 'dsh-mmd-btn dsh-mmd-view-control';
+  const btnEdit = createButton('dsh-mmd-view-control');
+  btnEdit.dataset.view = 'edit';
   btnEdit.setAttribute('aria-pressed', 'false');
-  const btnFullscreen = document.createElement('button');
-  btnFullscreen.type = 'button';
-  btnFullscreen.className = 'dsh-mmd-btn dsh-mmd-diagram-action';
-  const btnDownloadSvg = document.createElement('button');
-  btnDownloadSvg.type = 'button';
-  btnDownloadSvg.className = 'dsh-mmd-btn dsh-mmd-diagram-action';
-  const btnCopy = document.createElement('button');
-  btnCopy.type = 'button';
-  btnCopy.className = 'dsh-mmd-btn dsh-mmd-source-action';
-  const btnDownloadMmd = document.createElement('button');
-  btnDownloadMmd.type = 'button';
-  btnDownloadMmd.className = 'dsh-mmd-btn dsh-mmd-source-action';
-  const btnRetry = document.createElement('button');
-  btnRetry.type = 'button';
-  btnRetry.className = 'dsh-mmd-btn dsh-mmd-retry';
-  const actionSlot = document.createElement('div');
-  actionSlot.className = 'dsh-mmd-action-slot';
-  actionSlot.append(btnCopy, btnDownloadMmd, btnDownloadSvg, btnFullscreen, btnRetry);
+  views.append(btnDiagram, btnCode, btnEdit);
+  const btnFullscreen = createButton('dsh-mmd-diagram-action dsh-mmd-fullscreen');
+  const btnDownloadSvg = createButton('dsh-mmd-diagram-action');
+  const btnDownloadPng = createButton();
+  const btnCopy = createButton('dsh-mmd-source-action');
+  const btnDownloadMmd = createButton('dsh-mmd-source-action');
+  const btnRetry = createButton('dsh-mmd-retry');
+  const btnDiagnostics = createButton('dsh-mmd-diagnostics');
+  const fileActions = document.createElement('div');
+  fileActions.className = 'dsh-mmd-file-actions';
+  fileActions.setAttribute('role', 'group');
+  const exportButton = createButton('dsh-mmd-export');
+  const exportMenu = document.createElement('div');
+  exportMenu.className = 'dsh-mmd-export-list';
+  exportMenu.setAttribute('popover', 'auto');
+  exportMenu.setAttribute('role', 'group');
+  exportButton.popoverTargetElement = exportMenu;
+  exportMenu.append(btnDownloadSvg, btnDownloadPng, btnDownloadMmd);
+  fileActions.append(btnCopy, exportButton, exportMenu);
+  const errorActions = document.createElement('div');
+  errorActions.className = 'dsh-mmd-error-actions';
+  errorActions.append(btnRetry, btnDiagnostics);
+  const preview = document.createElement('div');
+  preview.className = 'dsh-mmd-preview';
+  const previewHeader = document.createElement('div');
+  previewHeader.className = 'dsh-mmd-panel-head';
+  const previewLabel = document.createElement('span');
+  previewLabel.className = 'dsh-mmd-preview-label';
+  const previewControls = document.createElement('div');
+  previewControls.className = 'dsh-mmd-preview-controls';
+  previewControls.setAttribute('role', 'group');
+  const zoomControls = document.createElement('div');
+  zoomControls.className = 'dsh-mmd-inline-zoom';
+  const zoomOut = createButton();
+  const zoomFit = createButton();
+  const zoomIn = createButton();
+  zoomControls.append(zoomOut, zoomFit, zoomIn);
+  zoomOut.textContent = '−';
+  zoomIn.textContent = '+';
+  previewControls.append(zoomControls, btnFullscreen);
   const body = document.createElement('div');
   body.className = 'dsh-mmd-body';
   const pane = document.createElement('div');
   pane.className = 'dsh-mmd-pane';
   pane.dataset.state = 'loading';
+  pane.setAttribute('role', 'group');
+  previewHeader.append(previewLabel, previewControls);
+  preview.append(previewHeader, pane);
   const codePane = document.createElement('pre');
   codePane.className = 'dsh-mmd-code';
   codePane.tabIndex = -1;
-  codePane.textContent = code.textContent || '';
+  codePane.textContent = raw;
   const editorPane = document.createElement('div');
   editorPane.className = 'dsh-mmd-editor';
+  const editorHeader = document.createElement('div');
+  editorHeader.className = 'dsh-mmd-panel-head';
+  const sourceLabel = document.createElement('span');
   const editor = document.createElement('textarea');
   editor.className = 'dsh-mmd-textarea';
-  editor.value = code.textContent || '';
+  editor.value = raw;
   editor.rows = 10;
   editor.spellcheck = false;
   editor.setAttribute('autocomplete', 'off');
   editor.setAttribute('autocapitalize', 'off');
   editor.setAttribute('wrap', 'off');
-  const editorFooter = document.createElement('div');
-  editorFooter.className = 'dsh-mmd-editor-footer';
   const draftHint = document.createElement('span');
   draftHint.className = 'dsh-mmd-draft-hint';
-  const btnReset = document.createElement('button');
-  btnReset.type = 'button';
-  btnReset.className = 'dsh-mmd-btn dsh-mmd-reset';
+  const btnReset = createButton('dsh-mmd-reset');
   btnReset.disabled = true;
-  editorFooter.append(draftHint, btnReset);
-  editorPane.append(editor, editorFooter);
+  editorHeader.append(sourceLabel, btnReset);
+  editorPane.append(editorHeader, editor, draftHint);
+  const feedback = document.createElement('div');
+  feedback.className = 'dsh-mmd-feedback';
   const noticeEl = document.createElement('div');
   noticeEl.className = 'dsh-mmd-notice';
   noticeEl.hidden = true;
@@ -533,17 +631,22 @@ function createEntry(code) {
   statusEl.setAttribute('aria-live', 'polite');
   statusEl.setAttribute('aria-atomic', 'true');
 
-  body.append(pane, codePane, editorPane, configWarning, noticeEl, errorEl, statusEl);
-  bar.append(badge, btnCode, btnDiagram, btnEdit, actionSlot);
-  wrapper.append(bar, body);
+  body.append(codePane, editorPane, preview, configWarning, statusEl);
+  bar.append(views, fileActions);
+  feedback.append(noticeEl, errorEl, errorActions);
+  wrapper.append(bar, feedback, body);
 
   const entry = {
-    code, wrapper, bar, pane, codePane, editorPane, editor, editorFooter, draftHint, btnReset,
-    noticeEl, configWarning, errorEl, statusEl, badge, btnDiagram, btnCode, btnEdit,
-    btnFullscreen, btnDownloadSvg, btnCopy, btnDownloadMmd, btnRetry, actionSlot,
-    draft: code.textContent || '', draftDirty: false, composing: false,
+    code, wrapper, bar, views, fileActions, preview, previewControls, pane, codePane, editor, body, feedback,
+    sourceLabel, previewLabel, draftHint, btnReset, noticeEl, configWarning, errorEl, errorActions, statusEl,
+    type: 'mermaid', btnDiagram, btnCode, btnEdit,
+    btnFullscreen, btnDownloadSvg, btnDownloadPng, btnCopy, btnDownloadMmd, btnRetry, btnDiagnostics,
+    exportButton, exportMenu, pngPending: false,
+    zoomOut, zoomFit, zoomIn, inlinePreview: null,
+    nativeSource, draft: raw, draftDirty: false, composing: false,
     lastRendered: '', lastRenderedStyleKey: '', lastRenderState: 'idle',
     targetStyleKey: currentStyleKey(), mountId: mount.id,
+    retryCount: 0, failureStage: '',
     stableTimer: null, renderTimer: null, renderGeneration: 0, viewAdjustment: 0,
     messageKey: 'rendering', messageParameters: {},
     statusKey: null, statusParameters: {}, tooltipPositioner,
@@ -557,16 +660,47 @@ function createEntry(code) {
   btnDiagram.addEventListener('click', () => setViewFromControl(entry, 'diagram'));
   btnCode.addEventListener('click', () => setViewFromControl(entry, 'code'));
   btnEdit.addEventListener('click', () => setViewFromControl(entry, 'edit'));
-  btnFullscreen.addEventListener('click', () => { if (isPreviewFresh(entry)) fullscreenViewer.open(entry); });
-  btnDownloadSvg.addEventListener('click', () => downloadSvg(entry));
-  btnCopy.addEventListener('click', () => { void copySource(entry); });
-  btnDownloadMmd.addEventListener('click', () => downloadMmd(entry));
+  btnFullscreen.addEventListener('click', () => { if (isPreviewFresh(entry)) fullscreenViewer?.open(entry); });
+  btnCopy.addEventListener('click', () => { void copyText(entry, currentRawSource(entry), 'copied'); });
+  exportMenu.addEventListener('toggle', (event) => {
+    if (event.newState !== 'open') return;
+    if (!window.CSS.supports('position-area: block-end span-inline-start')) {
+      const rect = exportButton.getBoundingClientRect();
+      const gap = 4;
+      exportMenu.style.left = `${Math.max(gap, rect.right - exportMenu.offsetWidth)}px`;
+      exportMenu.style.top = `${rect.bottom + gap + exportMenu.offsetHeight <= window.innerHeight
+        ? rect.bottom + gap : Math.max(gap, rect.top - gap - exportMenu.offsetHeight)}px`;
+    }
+    exportMenu.querySelector('button:enabled')?.focus({ preventScroll: true });
+  });
+  for (const [button, format] of [[btnDownloadSvg, 'svg'], [btnDownloadPng, 'png'], [btnDownloadMmd, 'mmd']]) {
+    button.addEventListener('click', () => {
+      exportMenu.hidePopover?.();
+      exportButton.focus({ preventScroll: true });
+      void exportDiagram(entry, format);
+    });
+  }
   btnReset.addEventListener('click', () => resetDraft(entry));
+  zoomOut.addEventListener('click', () => zoomInline(entry, 1 / 1.5));
+  zoomFit.addEventListener('click', () => zoomInline(entry));
+  zoomIn.addEventListener('click', () => zoomInline(entry, 1.5));
   btnRetry.addEventListener('click', () => {
     if (btnRetry.hidden) return;
     const hadFocus = document.activeElement === btnRetry;
-    scheduleRender(entry, 0);
+    entry.retryCount += 1;
+    scheduleRender(entry, 0, true);
     if (hadFocus) bar.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
+  });
+  btnDiagnostics.addEventListener('click', () => {
+    if (errorActions.hidden) return;
+    const report = {
+      diagram: entry.type,
+      mermaid: ENGINE_VERSION,
+      stage: entry.failureStage,
+      outcome: entry.messageKey,
+      retryAttempts: entry.retryCount,
+    };
+    void copyText(entry, JSON.stringify(report, null, 2), 'diagnosticsCopied');
   });
   editor.addEventListener('input', () => {
     entry.draft = editor.value;
@@ -591,6 +725,11 @@ function createEntry(code) {
   // Track pending cards too, so disposal also cancels their first-mount timer.
   wrapper._dshCode = code;
   wrappers.add(wrapper);
+  if (nativeSource !== undefined) {
+    code.append(wrapper);
+    scheduleRender(entry, 0);
+    return;
+  }
   entry.stableTimer = setTimeout(() => {
     entry.stableTimer = null;
     const pre = code.closest('pre');
@@ -603,9 +742,30 @@ function createEntry(code) {
   }, STABLE_MS);
 }
 
+function updateNativeCard(seat, source) {
+  if (!seat) return;
+  const entry = entries.get(seat);
+  if (!source?.trim()) {
+    if (entry) disposeEntry(entry);
+    return;
+  }
+  if (!mount || !seat.isConnected) return;
+  if (!entry) createEntry(seat, source);
+  else if (entry.nativeSource !== source) {
+    entry.nativeSource = source;
+    if (!entry.draftDirty) scheduleRender(entry, 0);
+  }
+}
+
 async function renderDiagram(entry) {
   // A queued task can outlive its debounce or enter composition while waiting.
   if (entry.composing || entry.renderTimer) return;
+  if (entry.wrapper.dataset.view === 'code' && !entry.renderInCode) {
+    entry.deferredRender = true;
+    setEntryLoading(entry, true);
+    return;
+  }
+  entry.renderInCode = false;
   if (!entry.draftDirty) syncDraftFromMessage(entry);
   const raw = currentRawSource(entry);
   const source = raw.trim();
@@ -630,7 +790,7 @@ async function renderDiagram(entry) {
   const isCurrent = () => mount === owner && owner?.id === entry.mountId
     && generation === entry.renderGeneration && entry.wrapper.isConnected && entry.code.isConnected
     && currentRawSource(entry).trim() === source && (!capturedKey || capturedKey === currentStyleKey());
-  entry.badge.textContent = diagramType(source) || 'mermaid';
+  entry.type = diagramType(source) || 'mermaid';
   if (!entry.draftDirty) entry.codePane.textContent = raw;
   setEntryLoading(entry);
 
@@ -644,11 +804,13 @@ async function renderDiagram(entry) {
     }
   }
   if (limitMessage) {
+    entry.failureStage = 'limit';
     setEntryError(entry, limitMessage.key, limitMessage.parameters);
     return;
   }
 
   let runtime;
+  entry.failureStage = 'load';
   try {
     const [loadedRuntime, snapshot] = await Promise.all([loadMermaidRuntime().catch(() => null), loadStyle(owner)]);
     runtime = loadedRuntime;
@@ -660,10 +822,13 @@ async function renderDiagram(entry) {
     const style = effectiveStyle(snapshot.style, isDark());
     capturedKey = styleKey(style);
     entry.targetStyleKey = capturedKey;
+    entry.failureStage = 'initialize';
     initializeMermaid(runtime, style);
+    entry.failureStage = 'render';
     const id = `dsh-mmd-${++uid}`;
-    const { svg, bindFunctions } = await runtime.render(id, source);
+    const { svg, bindFunctions, diagramType: renderedType } = await runtime.render(id, source);
     if (!isCurrent()) return;
+    entry.failureStage = 'svg';
     const markup = document.createElement('template');
     markup.innerHTML = svg;
     const svgElement = markup.content.querySelector('svg');
@@ -673,16 +838,22 @@ async function renderDiagram(entry) {
     }
     if (!hasSvgContent(svgElement)) {
       setEntryEmpty(entry, 'emptyDiagram');
-      if (fullscreenViewer.isOpenFor(entry)) fullscreenViewer.close();
       return;
     }
     // Binding requires the mounted SVG. Keep the original nodes for rollback
     // so a binding failure cannot separate the preview from lastRendered.
     const previousNodes = [...entry.pane.childNodes];
+    const { scrollLeft, scrollTop } = entry.pane;
     try {
       entry.pane.replaceChildren(markup.content);
-      ensureSvgAccessibility(svgElement, t('diagramTitle', { type: entry.badge.textContent || 'mermaid' }));
+      if (!prepareSvgPreview(svgElement, renderedType)) {
+        entry.pane.replaceChildren(...previousNodes);
+        setEntryEmpty(entry, 'emptyDiagram');
+        return;
+      }
+      ensureSvgAccessibility(svgElement, t('diagramTitle', { type: entry.type }));
       if (bindFunctions) {
+        entry.failureStage = 'bind';
         try {
           bindFunctions(svgElement);
         } finally {
@@ -703,12 +874,19 @@ async function renderDiagram(entry) {
     }
     entry.lastRendered = source;
     entry.lastRenderedStyleKey = capturedKey;
+    entry.renderedType = renderedType;
+    entry.previewNeedsMeasurement = entry.wrapper.dataset.view === 'code';
+    entry.inlinePreview ||= runtime.createInlinePreview?.(entry.pane);
+    entry.inlinePreview?.update(svgElement);
+    entry.pane.scrollLeft = scrollLeft;
+    entry.pane.scrollTop = scrollTop;
     setEntryRendered(entry);
-    if (fullscreenViewer.isOpenFor(entry)) fullscreenViewer.update(entry, false);
+    if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.update(entry, false);
   } catch (error) {
     if (!isCurrent()) return;
     const parameters = { detail: error?.message || String(error) };
     if (runtime?.isSourceError?.(error)) {
+      entry.failureStage = 'source';
       const hasSvg = Boolean(entry.pane.querySelector('svg'));
       setEntryError(entry, 'renderFailed', parameters, hasSvg ? 'previewStaleStatus' : 'renderFailedStatus');
     } else {
@@ -722,21 +900,30 @@ function cancelScheduledRender(entry) {
   entry.renderTimer = null;
 }
 
-function scheduleRender(entry, delay = RENDER_DEBOUNCE_MS) {
+function scheduleRender(entry, delay = RENDER_DEBOUNCE_MS, renderInCode = false) {
   cancelScheduledRender(entry);
   entry.renderGeneration += 1;
   if (!entry.draftDirty && !entry.composing) {
     syncDraftFromMessage(entry);
-    if (!(entry.code.textContent || '').trim()) {
+    if (!messageSource(entry).trim()) {
       disposeEntry(entry);
       return;
     }
   }
+  entry.deferredRender = false;
+  entry.renderInCode = renderInCode;
+  if (canRestorePreview(entry)) {
+    setEntryRendered(entry);
+    return;
+  }
+  if (!currentRawSource(entry).trim()) {
+    setEntryEmpty(entry);
+    return;
+  }
   // Reflect stale previews during the debounce and while other cards render.
-  if (canRestorePreview(entry)) setEntryRendered(entry);
-  else if (!currentRawSource(entry).trim()) setEntryEmpty(entry);
-  else setEntryLoading(entry);
-  if (entry.composing) return;
+  entry.deferredRender = entry.wrapper.dataset.view === 'code' && !renderInCode;
+  setEntryLoading(entry, entry.deferredRender);
+  if (entry.composing || entry.deferredRender) return;
   entry.renderTimer = setTimeout(() => {
     entry.renderTimer = null;
     enqueueRender(entry);
@@ -782,7 +969,8 @@ function disposeEntry(entry) {
   if (entry.stableTimer) clearTimeout(entry.stableTimer);
   if (entry.renderTimer) clearTimeout(entry.renderTimer);
   entry.renderGeneration += 1;
-  if (fullscreenViewer.isOpenFor(entry)) fullscreenViewer.close();
+  entry.inlinePreview?.dispose();
+  if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.close();
   entry.wrapper.remove();
   wrappers.delete(entry.wrapper);
   entries.delete(entry.code);
@@ -839,11 +1027,12 @@ function reRenderAll() {
 }
 
 function apply(ctx) {
-  registerNativeSettings(ctx, typeof require === 'function' ? require : null);
+  const hostRequire = typeof require === 'function' ? require : null;
+  registerNativeSettings(ctx, hostRequire);
   ctx.effect(() => {
     if (typeof document === 'undefined' || !document.body) return undefined;
     if (mount) throw new Error('dsh-mermaid: duplicate client mount');
-    const owner = { id: ++mountSequence, loader: createStyleLoader(), snapshot: null, promise: null, warningAnnounced: false };
+    const owner = { id: ++mountSequence, loader: createStyleLoader(), snapshot: null, promise: null, warningAnnounced: false, nativeFencesActive: false };
     mount = owner;
     currentLocale = detectLocale();
     injectCss();
@@ -862,11 +1051,11 @@ function apply(ctx) {
     localeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
     const handleDocumentKeydown = (event) => {
       if (event.key === 'Escape') {
-        fullscreenViewer.close();
+        fullscreenViewer?.close();
       }
     };
     const handleWindowResize = () => {
-      if (fullscreenViewer.isOpen()) fullscreenViewer.fit();
+      if (fullscreenViewer?.isOpen()) fullscreenViewer.fit();
     };
     document.addEventListener('keydown', handleDocumentKeydown);
     window.addEventListener('resize', handleWindowResize);
@@ -886,12 +1075,22 @@ function apply(ctx) {
         if (entry) disposeEntry(entry);
         else wrapper.remove();
       }
-      fullscreenViewer.destroy();
+      fullscreenViewer?.destroy();
       positions.disposed = true;
       positions.instance?.dispose();
       if (tooltipPositioner === positions) tooltipPositioner = null;
       removeCss();
     };
+  });
+  registerNativeFences(ctx, hostRequire, updateNativeCard, (active) => {
+    if (!mount) return;
+    mount.nativeFencesActive = active;
+    if (active) {
+      for (const wrapper of wrappers) {
+        const entry = entries.get(wrapper._dshCode);
+        if (entry?.nativeSource === undefined && entry?.code.closest(FENCE_SELECTOR)) disposeEntry(entry);
+      }
+    }
   });
 }
 

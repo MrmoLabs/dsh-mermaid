@@ -83,6 +83,27 @@ function svgDimensions(svg) {
   };
 }
 
+function prepareSvgPreview(svg, type) {
+  const view = svg.viewBox?.baseVal;
+  if (!view || view.width <= 0 || view.height <= 0 || !svg.getClientRects().length) return true;
+  try {
+    const { x, y, width, height } = svg.getBBox();
+    if (![x, y, width, height].every(Number.isFinite)) return true;
+    if (!width && !height) return false;
+    if (type !== 'gantt' && type !== 'journey') return true;
+    const left = Math.min(view.x, x);
+    const top = Math.min(view.y, y);
+    const right = Math.max(view.x + view.width, x + width);
+    const bottom = Math.max(view.y + view.height, y + height);
+    if (left !== view.x || top !== view.y || right !== view.x + view.width || bottom !== view.y + view.height) {
+      svg.setAttribute('viewBox', `${left} ${top} ${right - left} ${bottom - top}`);
+    }
+  } catch {
+    // SVG geometry can be unavailable while the host is hiding the card.
+  }
+  return true;
+}
+
 function rewriteSvgIds(svg) {
   const elements = [svg, ...svg.querySelectorAll('*')];
   const idMap = new Map();
@@ -123,6 +144,7 @@ export {
   ensureSvgAccessibility,
   hasSvgContent,
   localizeGeneratedSvgTitle,
+  prepareSvgPreview,
   rewriteSvgIds,
   serializeSvg,
   svgDimensions,
