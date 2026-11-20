@@ -102,9 +102,10 @@ function svgDimensions(svg) {
   };
 }
 
-function prepareSvgPreview(svg, type) {
+function measureSvgPreview(svg, type) {
   const view = svg.viewBox?.baseVal;
-  if (!svg.getClientRects().length || !view) return true;
+  if (!svg.getClientRects().length) return null;
+  if (!view) return true;
   if (svg.hasAttribute('viewBox') && (view.width === 0 || view.height === 0)) {
     const dimensions = svg.getAttribute('viewBox').trim().split(/[\s,]+/).map(Number);
     if (dimensions.length === 4 && dimensions.every(Number.isFinite) &&
@@ -129,6 +130,27 @@ function prepareSvgPreview(svg, type) {
     // SVG geometry can be unavailable while the host is hiding the card.
   }
   return true;
+}
+
+function prepareSvgPreview(svg, type) {
+  const measured = measureSvgPreview(svg, type);
+  if (measured !== null || !svg.parentNode) return measured;
+
+  // Code view hides the preview, but an explicit retry can still export it.
+  const document = svg.ownerDocument;
+  const parent = svg.parentNode;
+  const next = svg.nextSibling;
+  const staging = document.createElement('div');
+  staging.setAttribute('aria-hidden', 'true');
+  staging.style.cssText = 'position:fixed;inset:0 0 auto;height:0;overflow:hidden;opacity:0;pointer-events:none';
+  document.body.append(staging);
+  try {
+    staging.append(svg);
+    return measureSvgPreview(svg, type);
+  } finally {
+    parent.insertBefore(svg, next);
+    staging.remove();
+  }
 }
 
 function rewriteSvgIds(svg) {

@@ -125,14 +125,44 @@ function mergeVariables(common, branch) {
 function cloneValue(value) {
   return isPlainObject(value) ? mergeVariables({}, value) : Array.isArray(value) ? value.map(cloneValue) : value;
 }
+
+function hexLuminance(color) {
+  if (typeof color !== 'string') return undefined;
+  const hex = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)?.[1];
+  if (!hex) return undefined;
+  const channels = hex.length === 3 ? [...hex].map((digit) => digit.repeat(2)) : hex.match(/.{2}/g);
+  const [red, green, blue] = channels.map((channel) => {
+    const value = Number.parseInt(channel, 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function applyBaseTextDefault(variables) {
+  if (Object.hasOwn(variables, 'primaryTextColor') || Object.hasOwn(variables, 'nodeTextColor')) return;
+  const fill = hexLuminance(variables.mainBkg || variables.primaryColor);
+  if (fill === undefined) return;
+  const defaultText = variables.darkMode ? '#eee' : '#333';
+  const oppositeText = variables.darkMode ? '#333' : '#eee';
+  const isReadable = (color) => {
+    const text = hexLuminance(color);
+    return (Math.max(fill, text) + 0.05) / (Math.min(fill, text) + 0.05) >= 4.5;
+  };
+  if (isReadable(defaultText)) return;
+  variables.primaryTextColor = [oppositeText, '#000', '#fff'].find(isReadable);
+  // Mermaid also derives the foreground outside nodes from primaryTextColor.
+  if (!Object.hasOwn(variables, 'textColor')) variables.textColor = defaultText;
+}
+
 function effectiveStyle(style, dark) {
   const result = { theme: style.theme === 'auto' ? (dark ? 'dark' : 'default') : style.theme, look: style.look };
   if (style.theme === 'base') {
     result.themeVariables = mergeVariables(style.themeVariables.common, style.themeVariables[dark ? 'dark' : 'light']);
-    // Mermaid's stock base fills are light, including when darkMode is enabled.
+    // Typography and chart-specific overrides leave the stock node fills light.
     if (!Object.hasOwn(result.themeVariables, 'darkMode')) {
-      result.themeVariables.darkMode = dark && Object.keys(result.themeVariables).length > 0;
+      result.themeVariables.darkMode = dark && Boolean(result.themeVariables.mainBkg || result.themeVariables.primaryColor);
     }
+    applyBaseTextDefault(result.themeVariables);
   }
   return deepFreeze(result);
 }

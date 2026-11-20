@@ -64,10 +64,29 @@ test('deep merges variables, replaces arrays, keeps explicit darkMode and stable
   assert.deepEqual(mergeVariables(common, branch), { xyChart: { titleColor: 'red', plotColorPalette: ['c'] }, fontSize: '15px' });
   assert.deepEqual(common.xyChart.plotColorPalette, ['a', 'b']);
   const style = normalizeRenderConfig({ theme: 'base', themeVariables: { common, dark: branch } }).style;
-  assert.equal(effectiveStyle(style, true).themeVariables.darkMode, true);
+  assert.equal(effectiveStyle(style, true).themeVariables.darkMode, false);
   assert.equal(effectiveStyle(style, false).themeVariables.darkMode, false);
   assert.equal(effectiveStyle(normalizeRenderConfig({ theme: 'base', themeVariables: { common: { darkMode: false } } }).style, true).themeVariables.darkMode, false);
+  assert.equal(effectiveStyle(normalizeRenderConfig({ theme: 'base', themeVariables: { common: { darkMode: true } } }).style, false).themeVariables.darkMode, true);
+  const nodePalette = normalizeRenderConfig({ theme: 'base', themeVariables: { dark: { mainBkg: '#202124' } } }).style;
+  assert.equal(effectiveStyle(nodePalette, true).themeVariables.darkMode, true);
   assert.equal(styleKey({ b: [1, 2], a: { y: 1, x: 2 } }), styleKey({ a: { x: 2, y: 1 }, b: [1, 2] }));
   assert.notEqual(styleKey([1, 2]), styleKey([2, 1]));
   assert.equal(styleKey(effectiveStyle(normalizeRenderConfig({ theme: 'forest', themeVariables: { common } }).style, true)), styleKey(effectiveStyle(normalizeRenderConfig({ theme: 'forest' }).style, false)));
+});
+
+test('derives readable Base node text without changing the saved fill or canvas mode', () => {
+  const input = { theme: 'base', themeVariables: { common: { mainBkg: '#e0e7ff' } } };
+  const { style } = normalizeRenderConfig(input);
+  assert.deepEqual(effectiveStyle(style, true).themeVariables, {
+    mainBkg: '#e0e7ff', darkMode: true, primaryTextColor: '#333', textColor: '#eee',
+  });
+  assert.deepEqual(style.themeVariables.common, input.themeVariables.common);
+  const advanced = normalizeRenderConfig({
+    theme: 'base',
+    themeVariables: { common: { mainBkg: '#e0e7ff', nodeTextColor: '#123456', darkMode: true } },
+  }).style;
+  assert.deepEqual(effectiveStyle(advanced, false).themeVariables, {
+    mainBkg: '#e0e7ff', nodeTextColor: '#123456', darkMode: true,
+  });
 });

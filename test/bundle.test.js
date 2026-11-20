@@ -15,6 +15,8 @@ test('browser bundle registers dsh-mermaid and its real runtime respects the doc
 
   const bundle = await readFile('lib/client.js', 'utf8');
   const runtime = await readFile('lib/mermaid-runtime.js');
+  const katexVersion = JSON.parse(await readFile('node_modules/katex/package.json', 'utf8')).version;
+  assert.ok(runtime.includes(`"${katexVersion}"`), 'the browser runtime must embed the pinned KaTeX');
   const runtimeRevision = createHash('sha256').update(runtime).digest('hex').slice(0, 12);
   assert.ok(bundle.length < 48_000, `client bootstrap unexpectedly grew to ${bundle.length} bytes`);
   assert.ok(runtime.length > 1_000_000, 'the separately bundled Mermaid runtime is missing');

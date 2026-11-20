@@ -68,7 +68,7 @@ test('base mode deep merges branch variables and redraws drafts while preserving
     assert.equal(h.state.renderCalls.at(-1), editor.value);
     assert.equal(card.dataset.view, 'edit');
     assert.equal(card.querySelector('.dsh-mmd-reset').disabled, false);
-    assert.deepEqual(h.state.initializedOptions.at(-1).themeVariables, { xyChart: { titleColor: '#abc', xAxisLabelColor: '#456' }, darkMode: true });
+    assert.deepEqual(h.state.initializedOptions.at(-1).themeVariables, { xyChart: { titleColor: '#abc', xAxisLabelColor: '#456' }, darkMode: false });
   } finally { await h.cleanup(); }
 });
 

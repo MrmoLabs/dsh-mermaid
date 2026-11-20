@@ -1,0 +1,17 @@
+flowchart LR
+    subgraph 外壳[ProbeDrive 外壳: 事件映射 + 效果执行]
+      W[UsbPresenceWatch<br/>2s 采样 · 仅非USB或回退窗挂起时]
+      G[WiFi 守卫<br/>补偿入口 / 自动连接入口]
+      A[仲裁泵 PostModeArbitration]
+    end
+    subgraph 内核[ModeArbitrationMachine: 纯判定]
+      S[新增 _usbPresent 状态]
+      R1[UsbPresence: 在场+非USB → 抢占切USB]
+      R2[UsbLinkEstablished → 取消回退窗]
+      R3[OnTick 到期: 在场 → 保持USB]
+    end
+    W -->|UsbPresence(true/false)| A --> S
+    G -->|立即发布在场| A
+    R1 --> E[SwitchToUsb / PauseWifiRecovery / CancelWifiInFlight / SetFlag(false)]
+    R2 --> C[CancelFallbackWindow]
+    R3 --> C

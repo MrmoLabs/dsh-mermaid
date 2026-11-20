@@ -16,6 +16,8 @@ Requires DeepSeek Harness (DSH) and **Node.js 22.19 or later**. Commands below u
 
 ### 1. Install
 
+The npm release (`0.4.5`) supports diagram and code views, fullscreen, and SVG downloads. Inline editing, `.mmd` and PNG downloads, and rendering-style settings are covered below for the unreleased source build. See [Advanced usage](#advanced-usage) to install from GitHub.
+
 With a global `dsh` command, install the npm release into your Web profile:
 
 ```powershell
@@ -51,7 +53,7 @@ On hosts with the Markdown fence slot, an active reply shows the host's source b
 
 On older hosts, an incomplete code block can stay in **Diagram** while more source arrives. Open **Edit** to check its syntax immediately. Diagram previews are queued when their cards approach the viewport.
 
-### 3. Edit the source
+### 3. Edit the source (source build)
 
 - **Edit** opens a source panel alongside the diagram preview. On narrow cards the preview moves below the source. Changes re-render after a short debounce, and rendering messages appear in the preview panel.
 - The draft is local to this page and is never written back to the sent message. Refreshing the page or rebuilding the card discards it.
@@ -60,6 +62,8 @@ On older hosts, an incomplete code block can stay in **Diagram** while more sour
 - Syntax errors show a line number when Mermaid reports one. Expand **Error details** for the full parser message.
 
 ### 4. Explore and export
+
+PNG and `.mmd` downloads, and inline canvas controls in this section require the source build.
 
 - Wide diagrams open at a readable scale and can overflow the canvas. Use **− / Fit card / +** above the preview in **Diagram** and **Edit**. Double-click the canvas to zoom in or reset to fit. Zooming keeps the card height steady. Drag an overflowing diagram to pan horizontally or vertically.
 - **Fullscreen**, above the preview in **Diagram** and **Edit**, opens a viewer with mouse-wheel zoom, dragging, 100% reset, and fit-to-window controls. Press `Esc` to close it.
@@ -81,6 +85,7 @@ Open **Plugins → Installed plugins → dsh-mermaid** in the sidebar. The **Ren
 
 - Select **Custom** to edit fonts, font size, base color, node fill/text/border and line colors under Common / Light / Dark. Empty fields inherit common variables or Mermaid defaults.
 - **Base color** edits `primaryColor`; **Node fill** edits `mainBkg`, used by flowcharts and other types. They are saved independently without overwriting advanced settings, with a hint when a separate fill exists. Other diagram types may use dedicated variables.
+- Leaving node text unset lets the plugin choose a readable default for an opaque hex fill. An explicit node text color takes precedence.
 - Expand **Advanced variables (JSON)** to paste additional variables, including diagram-specific nested objects and arrays. Basic fields preserve unrelated advanced variables, and switching tabs retains each group's input.
 - **Load Indigo / Slate example** provides an editable starting point. **Restore defaults** also changes only the draft until saved.
 - **Save** validates all groups, submits one revisioned mutation through the host settings service, and confirms accepted readback. Failed or conflicting writes retain the draft; **Discard changes** loads current host values.
@@ -163,7 +168,7 @@ The current **unreleased source** was checked on **2026-11-17**:
 
 Upgrading from npm `0.4.5` to the current build retained saved rendering settings and other profile overrides. The Linux host ran on Node.js 24.22.3 in a Debian container; a Linux-native browser and macOS were not tested.
 
-Fixed themes on opposite host backgrounds and incomplete `base` palettes can make text hard to read. Prefer `auto` for host-theme switching, or check both light and dark custom variable branches. The earlier screenshots above remain from the 2026-10-28 Web check. These results apply to the source version and do not imply a new npm release.
+The source build pairs a fixed theme with a matching diagram background. In `base`, changing typography alone keeps the default light node palette. Custom node palettes can set `darkMode` explicitly and should be checked in both host modes. The earlier screenshots above remain from the 2026-10-28 Web check.
 
 DSH is a developer preview; newer versions may change its plugin loader or Markdown DOM. When [reporting an issue](https://github.com/MrmoLabs/dsh-mermaid/issues), include your DSH, plugin, and Node.js versions, Web/Desktop profile, and a minimal Mermaid example. Remove private conversation content before sharing.
 
@@ -221,6 +226,15 @@ dsh plugin --profile web add -w .
 Build output is written to `lib/`. The lightweight `client.js` bootstrap is registered with the DSH client module loader as `dsh-mermaid`; the bundled Mermaid runtime is served through the plugin's same-origin host route and loaded on demand. DSH resolves the relative installation path against the current plugin checkout.
 
 `npm.cmd run check` runs syntax and client tests, builds the runtime, and tests its real parser in separate processes with and without a DOM. The DOM-backed parser tests use happy-dom as a test fixture; they do not verify browser layout or SVG rendering, or recommend a production server-side DOM implementation.
+
+To run the same Chromium layout checks as CI, install Playwright's headless Chromium once, then run the smoke checks after building:
+
+```powershell
+node node_modules/playwright-core/cli.js install chromium --only-shell
+npm.cmd run check:browser -- --smoke
+```
+
+Run `npm.cmd run check:browser` for the full Chromium suite.
 
 <details>
 <summary>Manual installation for local development</summary>

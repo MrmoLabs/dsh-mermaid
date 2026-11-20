@@ -137,14 +137,18 @@ function syncDraftFromMessage(entry) {
   return true;
 }
 
-function isPreviewFresh(entry) {
-  if (!entry.lastRendered || entry.lastRenderState !== 'ok' || entry.composing || !entry.pane.querySelector('svg')) return false;
-  return currentRawSource(entry).trim() === entry.lastRendered && entry.lastRenderedStyleKey === currentStyleKey();
+function matchingPreview(entry) {
+  if (!entry.lastRendered || entry.composing || currentRawSource(entry).trim() !== entry.lastRendered ||
+      entry.lastRenderedStyleKey !== currentStyleKey()) return null;
+  return entry.pane.querySelector('svg');
+}
+
+function readyPreview(entry) {
+  return entry.lastRenderState === 'ok' && !entry.previewNeedsMeasurement ? matchingPreview(entry) : null;
 }
 
 function canRestorePreview(entry) {
-  return Boolean(entry.lastRendered && entry.pane.querySelector('svg') && !entry.composing
-    && currentRawSource(entry).trim() === entry.lastRendered && entry.lastRenderedStyleKey === currentStyleKey()
+  return Boolean(matchingPreview(entry)
     && entry.failedTarget !== `${entry.lastRendered}\0${entry.lastRenderedStyleKey}`);
 }
 
@@ -182,10 +186,10 @@ function loadStyle(owner) {
 }
 
 function setActionAvailability(entry) {
-  const fresh = isPreviewFresh(entry);
-  entry.btnFullscreen.disabled = !fresh;
-  entry.btnDownloadSvg.disabled = !fresh;
-  entry.btnDownloadPng.disabled = entry.btnDownloadPngBackground.disabled = !fresh || entry.pngPending;
+  const ready = Boolean(readyPreview(entry));
+  entry.btnFullscreen.disabled = !ready;
+  entry.btnDownloadSvg.disabled = !ready;
+  entry.btnDownloadPng.disabled = entry.btnDownloadPngBackground.disabled = !ready || entry.pngPending;
   entry.btnReset.disabled = !entry.draftDirty;
   entry.btnRetry.hidden = !RETRYABLE_RENDER_ERRORS.has(entry.messageKey);
   entry.errorActions.hidden = entry.wrapper.dataset.state !== 'error';
@@ -354,12 +358,14 @@ function setView(entry, view) {
 }
 
 function measurePendingPreview(entry) {
-  if (!entry.previewNeedsMeasurement || !isPreviewFresh(entry)) return;
-  const svg = entry.pane.querySelector('svg');
-  if (!svg.getClientRects().length) return;
+  if (!entry.previewNeedsMeasurement || entry.lastRenderState !== 'ok') return;
+  const svg = matchingPreview(entry);
+  if (!svg?.getClientRects().length) return;
   entry.previewNeedsMeasurement = false;
-  if (prepareSvgPreview(svg, entry.renderedType)) entry.inlinePreview?.update(svg);
-  else {
+  if (prepareSvgPreview(svg, entry.renderedType)) {
+    entry.inlinePreview?.update(svg);
+    setActionAvailability(entry);
+  } else {
     svg.remove();
     setEntryEmpty(entry, 'emptyDiagram');
   }
@@ -510,8 +516,8 @@ async function exportDiagram(entry, extension, matchTheme) {
     downloadFile(entry, new Blob([source], { type: 'text/plain;charset=utf-8' }), source.trim(), extension, 'downloadedMmd');
     return;
   }
-  if (!isPreviewFresh(entry)) return;
-  const svg = entry.pane.querySelector('svg');
+  const svg = readyPreview(entry);
+  if (!svg) return;
   const source = entry.lastRendered;
   if (extension === 'svg') {
     const exported = svg.cloneNode(true);
@@ -522,7 +528,7 @@ async function exportDiagram(entry, extension, matchTheme) {
   if (entry.pngPending) return;
   entry.pngPending = true;
   setActionAvailability(entry);
-  const isCurrent = () => entry.wrapper.isConnected && entry.pane.querySelector('svg') === svg && isPreviewFresh(entry);
+  const isCurrent = () => entry.wrapper.isConnected && readyPreview(entry) === svg;
   try {
     const background = matchTheme ? entry.renderedBackground || (isDark() ? '#000' : '#fff') : null;
     const blob = await entry.rasterizeSvg(svg, background);
@@ -724,7 +730,9 @@ function createEntry(code, nativeSource) {
   btnDiagram.addEventListener('click', () => setViewFromControl(entry, 'diagram'));
   btnCode.addEventListener('click', () => setViewFromControl(entry, 'code'));
   btnEdit.addEventListener('click', () => setViewFromControl(entry, 'edit'));
-  btnFullscreen.addEventListener('click', () => { if (isPreviewFresh(entry)) fullscreenViewer?.open(entry); });
+  btnFullscreen.addEventListener('click', () => {
+    if (readyPreview(entry)) fullscreenViewer?.open(entry);
+  });
   btnCopy.addEventListener('click', () => { void copyText(entry, currentRawSource(entry), 'copied'); });
   exportMenu.addEventListener('toggle', (event) => {
     if (event.newState !== 'open') return;
@@ -921,9 +929,11 @@ async function renderDiagram(entry) {
     // so a binding failure cannot separate the preview from lastRendered.
     const previousNodes = [...entry.pane.childNodes];
     const { scrollLeft, scrollTop } = entry.pane;
+    let measured;
     try {
       entry.pane.replaceChildren(markup.content);
-      if (!prepareSvgPreview(svgElement, renderedType)) {
+      measured = prepareSvgPreview(svgElement, renderedType);
+      if (measured === false) {
         entry.pane.replaceChildren(...previousNodes);
         setEntryEmpty(entry, 'emptyDiagram');
         return;
@@ -954,7 +964,7 @@ async function renderDiagram(entry) {
     entry.renderedType = renderedType;
     entry.renderedBackground = background;
     entry.rasterizeSvg = runtime.rasterizeSvg;
-    entry.previewNeedsMeasurement = !svgElement.getClientRects().length;
+    entry.previewNeedsMeasurement = measured === null;
     entry.pane.style.setProperty('--dsh-mmd-diagram-background', background || '');
     entry.inlinePreview ||= runtime.createInlinePreview?.(
       entry.pane, () => setActionAvailability(entry), () => measurePendingPreview(entry),

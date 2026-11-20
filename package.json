@@ -39,6 +39,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node --check bin/dsh-mermaid.mjs && node --check bin/locale.mjs && node --check scripts/build.mjs && node --check src/client.js && node --check src/detection.js && node --check src/i18n.js && node --check src/index.js && node --check src/render-config.js && node --check src/style-loader.js && node --check src/mermaid-runtime.js && node --check src/scroll.js && node --check src/styles.js && node --check src/svg.js && node --check src/tooltip.js && node --check src/viewer.js && node --check src/settings-registration.js && node --check src/settings-model.js && node --check src/settings-runtime.js && node --test",
+    "check:browser": "node test-support/runtime-browser-probe.mjs",
     "prepare": "npm run build",
     "prepack": "npm run check"
   },
@@ -63,7 +64,14 @@
     "@deepseek-ai/schemastery": "3.19.0",
     "esbuild": "0.28.2",
     "happy-dom": "21.0.4",
-    "mermaid": "11.17.0"
+    "katex": "0.18.2",
+    "mermaid": "11.17.0",
+    "playwright-core": "1.61.1"
+  },
+  "overrides": {
+    "mermaid": {
+      "katex": "$katex"
+    }
   },
   "engines": {
     "node": ">=22.19.0"

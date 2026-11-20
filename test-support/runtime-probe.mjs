@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 const [scenario, runtimeUrl] = process.argv.slice(2);
 const labeledFlowchart = 'flowchart LR\n A["开始"] --> B["结束"]';
@@ -94,25 +95,7 @@ if (scenario === 'with-dom') {
     await renderMermaid('valid', normalized);
     assert.deepEqual(renderCalls.splice(0), [normalized]);
 
-    const issue9 = [
-      'flowchart LR',
-      '    subgraph 外壳[ProbeDrive 外壳: 事件映射 + 效果执行]',
-      '      W[UsbPresenceWatch<br/>2s 采样 · 仅非USB或回退窗挂起时]',
-      '      G[WiFi 守卫<br/>补偿入口 / 自动连接入口]',
-      '      A[仲裁泵 PostModeArbitration]',
-      '    end',
-      '    subgraph 内核[ModeArbitrationMachine: 纯判定]',
-      '      S[新增 _usbPresent 状态]',
-      '      R1[UsbPresence: 在场+非USB → 抢占切USB]',
-      '      R2[UsbLinkEstablished → 取消回退窗]',
-      '      R3[OnTick 到期: 在场 → 保持USB]',
-      '    end',
-      '    W -->|UsbPresence(true/false)| A --> S',
-      '    G -->|立即发布在场| A',
-      '    R1 --> E[SwitchToUsb / PauseWifiRecovery / CancelWifiInFlight / SetFlag(false)]',
-      '    R2 --> C[CancelFallbackWindow]',
-      '    R3 --> C',
-    ].join('\n');
+    const issue9 = (await readFile(new URL('./fixtures/issue-9.mmd', import.meta.url), 'utf8')).replaceAll('\r\n', '\n').trimEnd();
     const quotedIssue9 = issue9
       .replace('|UsbPresence(true/false)|', '|"UsbPresence(true/false)"|')
       .replace('[SwitchToUsb / PauseWifiRecovery / CancelWifiInFlight / SetFlag(false)]',
@@ -169,6 +152,10 @@ F --> A`;
     assert.deepEqual(renderCalls.splice(0), [contexts, escapedContexts]);
     await renderMermaid('escaped-quotes', escapedContexts);
     assert.deepEqual(renderCalls.splice(0), [escapedContexts]);
+
+    const attributedTag = 'flowchart LR\nA[Keep<br class=break/> "text"]-->B';
+    await assert.rejects(renderMermaid('attributed-line-break', attributedTag), isMermaidSourceError);
+    assert.deepEqual(renderCalls.splice(0), [attributedTag]);
 
     const missingQuote = 'flowchart LR\n A[Keep "text]';
     await assert.rejects(renderMermaid('unpaired-quote', missingQuote), (error) => error?.hash?.token === 'STR');

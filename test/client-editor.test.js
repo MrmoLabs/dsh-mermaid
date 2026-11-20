@@ -125,7 +125,7 @@ test('draft survives view switches and message updates; Reset restores the messa
   }
 });
 
-test('Copy and .mmd keep the raw draft, and SVG download is disabled while stale', async () => {
+test('Copy and .mmd keep the raw draft while a stale preview disables fullscreen and image exports', async () => {
   const harness = await createClientHarness();
   const { document, state } = harness;
   try {
@@ -146,12 +146,13 @@ test('Copy and .mmd keep the raw draft, and SVG download is disabled while stale
     const downloaded = await state.objectUrls.at(-1).text();
     assert.equal(downloaded, raw);
 
-    const svgButton = card.querySelectorAll('.dsh-mmd-diagram-action')[0];
-    assert.equal(svgButton.disabled, false);
+    const [svg, png, themedPng] = card.querySelectorAll('.dsh-mmd-export-list button');
+    const imageActions = [card.querySelector('.dsh-mmd-fullscreen'), svg, png, themedPng];
+    assert.ok(imageActions.every((button) => !button.disabled));
     setDraft(harness, card, `${raw}\nA-->`);
-    assert.equal(svgButton.disabled, true);
+    assert.ok(imageActions.every((button) => button.disabled));
     await waitFor(harness, () => card.dataset.state === 'error');
-    assert.equal(svgButton.disabled, true);
+    assert.ok(imageActions.every((button) => button.disabled));
   } finally {
     await harness.cleanup();
   }

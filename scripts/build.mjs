@@ -1,6 +1,7 @@
 import { build } from 'esbuild';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { CSS } from '../src/styles.js';
 
 await mkdir('lib', { recursive: true });
@@ -16,6 +17,8 @@ await build({
   format: 'esm',
   target: ['chrome120'],
   legalComments: 'external',
+  // Source builds also run inside pnpm profiles where dependency overrides are root-only.
+  alias: { katex: fileURLToPath(import.meta.resolve('katex')) },
 });
 
 const runtimeBundle = await readFile('lib/mermaid-runtime.js');

@@ -1,5 +1,5 @@
-// Build first, then run with an installed Playwright module and optional Chromium executable.
-// node test-support/runtime-browser-probe.mjs <playwright-module> [browser-executable]
+// Build first, then run with Playwright's Chromium or a supplied executable.
+// npm run check:browser -- [--smoke] [playwright-module] [browser-executable]
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -8,9 +8,13 @@ import { pathToFileURL } from 'node:url';
 import { apply } from '../lib/index.js';
 import { normalizeRenderConfig } from '../src/render-config.js';
 
-const [playwrightModule, executablePath] = process.argv.slice(2);
-assert.ok(playwrightModule, 'Pass an installed Playwright module path.');
-const { chromium } = await import(pathToFileURL(resolve(playwrightModule)).href);
+const args = process.argv.slice(2);
+const smokeCases = args[0] === '--smoke' ? new Set([
+  'issue1InvalidSource', 'issues4And7Titlebar', 'issue6TooltipOverflow', 'issues8And10ExportAndDraft',
+  'issue9Original', 'issue12Original', 'codeRetryExport', 'palette-base-typography', 'palette-base-node-fill',
+]) : null;
+const [playwrightModule, executablePath] = smokeCases ? args.slice(1) : args;
+const { chromium } = await import(playwrightModule ? pathToFileURL(resolve(playwrightModule)).href : 'playwright-core');
 const routes = new Map();
 const cleanups = [];
 apply({
@@ -21,17 +25,28 @@ apply({
 const basic = 'flowchart LR\nA-->B';
 const unfinished = 'flowchart LR\nA-->';
 const mixed = 'flowchart LR\nA[选中"节点"]-->B[Select(node)]';
+const issueFixture = async (number) => (await readFile(new URL(`./fixtures/issue-${number}.mmd`, import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
+const [issue8, issue9, issue12] = await Promise.all([8, 9, 12].map(issueFixture));
+const issue1 = 'this is not a diagram';
 const wide = `flowchart LR\n${Array.from({ length: 18 }, (_, n) => `N${n}[Node ${n + 1}]`).join(' --> ')}`;
 const journey = 'journey\n title A long project title\n section Plan\n First step: 5: Alex\n Second step: 3: Alex';
 const codeBlock = (source) => `<pre><code class="language-mermaid">${source.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</code></pre>`;
 const fixtures = {
   '/retry': codeBlock(basic),
+  '/issue-1': codeBlock(issue1),
+  '/issue-6': '<style>html,body{height:100%;margin:0}article{height:100%;overflow:auto}</style>' + codeBlock(basic),
+  '/issue-8': codeBlock(issue8),
+  '/issue-9': codeBlock(issue9),
+  '/issue-12': codeBlock(issue12),
+  '/code-retry-export': codeBlock(journey.replace('A long project title', 'A very long title '.repeat(10).trimEnd())),
   '/stream': codeBlock(unfinished),
   '/canvas': codeBlock(mixed) + codeBlock(basic),
   '/queue': codeBlock('flowchart LR\nA[STALL]-->B') + codeBlock(basic),
   '/offscreen': Array.from({ length: 15 }, (_, index) => codeBlock(`flowchart LR\nA[Node ${index}]-->B`) + '<div style="height:450px"></div>').join(''),
   '/geometry': `<div style="width:480px">${[wide, journey, '---\ntitle: Only a title\n---\nflowchart LR', 'xychart-beta\n x-axis [a,b,c]\n y-axis 0 --> 10\n bar [1,3,5]'].map(codeBlock).join('')}${codeBlock('flowchart LR\nInvisible --> B')}<div hidden>${codeBlock('flowchart LR\nWasHidden --> B')}</div></div>`,
   '/palette': codeBlock('sequenceDiagram\n Alice->>Bob: Message') + codeBlock(basic),
+  '/palette-node-text-override': codeBlock('---\nconfig:\n  theme: base\n  themeVariables:\n    primaryTextColor: "#0055aa"\n---\n' + basic) + codeBlock(basic),
+  '/math': codeBlock('flowchart LR\nA["$$x^2+1$$"]-->B'),
 };
 const client = await readFile('lib/client.js');
 const runtime = await readFile('lib/mermaid-runtime.js');
@@ -63,8 +78,10 @@ const report = {};
 let browser;
 
 async function run(name, test) {
+  if (smokeCases && !smokeCases.has(name)) return;
   const page = await browser.newPage({ viewport: { width: 1000, height: 760 }, acceptDownloads: true });
   try { report[name] = await test(page); }
+  catch (error) { throw new Error(`Browser check failed for ${name}`, { cause: error }); }
   finally { await page.close(); }
 }
 
@@ -76,8 +93,128 @@ async function download(page, card, label) {
   return { name: file.suggestedFilename(), bytes: await readFile(await file.path()) };
 }
 
+function contrastRatio(first, second) {
+  const luminance = (value) => {
+    const [r, g, b] = value.match(/\d+(?:\.\d+)?/g).slice(0, 3).map((channel) => Number(channel) / 255)
+      .map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const levels = [luminance(first), luminance(second)].sort((a, b) => a - b);
+  return (levels[1] + 0.05) / (levels[0] + 0.05);
+}
+
 try {
   browser = await chromium.launch({ headless: true, executablePath });
+  await run('issue1InvalidSource', async (page) => {
+    await page.goto(`${origin}/issue-1`);
+    const card = page.locator('.dsh-mmd[data-state="error"]');
+    await card.waitFor();
+    assert.equal(await page.locator('svg').count(), 0);
+    await card.getByRole('button', { name: '代码', exact: true }).click();
+    assert.equal(await card.locator('.dsh-mmd-code').textContent(), issue1);
+    return true;
+  });
+
+  await run('issues4And7Titlebar', async (page) => {
+    await page.goto(`${origin}/retry`);
+    const card = page.locator(readyCard);
+    await card.waitFor();
+    await page.evaluate(() => {
+      document.documentElement.dataset.windowsTitlebar = '';
+      document.documentElement.style.setProperty('--dsh-windows-titlebar-height', '40px');
+    });
+    await card.getByRole('button', { name: '全屏', exact: true }).click();
+    const viewer = page.locator('.dsh-mmd-viewer');
+    const controls = await viewer.locator('.dsh-mmd-viewer-bar button').all();
+    assert.equal(controls.length, 5);
+    for (const control of controls) {
+      assert.ok((await control.boundingBox()).y >= 40);
+      await control.click();
+    }
+    await viewer.waitFor({ state: 'hidden' });
+    return { minimumTitlebarClearance: 40, controlsClicked: controls.length };
+  });
+
+  await run('issue6TooltipOverflow', async (page) => {
+    await page.goto(`${origin}/issue-6`);
+    await page.locator(readyCard).waitFor();
+    const tooltip = page.locator('body > .mermaidTooltip');
+    await tooltip.waitFor({ state: 'attached' });
+    const measure = () => tooltip.evaluate((node) => ({
+      position: getComputedStyle(node).position,
+      overflow: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    }));
+    assert.deepEqual(await measure(), { position: 'fixed', overflow: 0 });
+    await page.locator('article').evaluate((article) => article.replaceChildren('Next conversation'));
+    await page.locator('.dsh-mmd').waitFor({ state: 'detached' });
+    assert.deepEqual(await measure(), { position: 'fixed', overflow: 0 });
+    return { rootOverflow: 0, tooltipRetained: true };
+  });
+
+  await run('issues8And10ExportAndDraft', async (page) => {
+    await page.goto(`${origin}/issue-8`);
+    const card = page.locator('.dsh-mmd');
+    const svg = card.locator('.dsh-mmd-pane svg');
+    await page.locator(readyCard).waitFor();
+    const baseline = await svg.textContent();
+    const file = await download(page, card, '下载 SVG');
+    assert.equal(await page.evaluate((xml) => {
+      const doc = new DOMParser().parseFromString(xml, 'image/svg+xml');
+      return !doc.querySelector('parsererror') &&
+        doc.getElementsByTagNameNS('http://www.w3.org/1999/xhtml', 'br').length === 1;
+    }, file.bytes.toString('utf8')), true);
+    await card.getByRole('button', { name: '编辑', exact: true }).click();
+    const editor = card.locator('textarea');
+    const draft = `${issue8}\nC -->`;
+    await editor.fill(draft);
+    await page.locator('.dsh-mmd[data-state="error"]').waitFor();
+    assert.equal(await svg.textContent(), baseline);
+    assert.equal(await card.getByRole('button', { name: '全屏', exact: true }).isEnabled(), false);
+    await card.getByRole('button', { name: /^导出/ }).click();
+    for (const name of ['下载 SVG', '下载 PNG', '下载 PNG（主题背景）']) {
+      assert.equal(await card.getByRole('button', { name, exact: true }).isEnabled(), false);
+    }
+    await page.keyboard.press('Escape');
+    const exported = await download(page, card, '下载 .mmd');
+    assert.equal(exported.bytes.toString('utf8'), draft);
+    assert.equal(await page.locator('article > pre code').textContent(), issue8);
+    await card.getByRole('button', { name: '恢复原文', exact: true }).click();
+    await page.locator(readyCard).waitFor();
+    assert.equal(await editor.inputValue(), issue8);
+    return { validXhtmlSvg: true, stalePreviewRetained: true, rawDraftExport: true, reset: true };
+  });
+
+  await run('issue9Original', async (page) => {
+    await page.goto(`${origin}/issue-9`);
+    const card = page.locator(readyCard);
+    const svg = card.locator('.dsh-mmd-pane svg');
+    await svg.waitFor();
+    assert.equal(await svg.locator('g.node').count(), 9);
+    const labels = await svg.textContent();
+    assert.match(labels, /UsbPresence\(true\/false\)/);
+    assert.match(labels, /SetFlag\(false\)/);
+    const exported = await download(page, card, '下载 .mmd');
+    assert.equal(exported.bytes.toString('utf8'), issue9);
+    return { nodes: 9, sourceExportUnchanged: true };
+  });
+
+  await run('issue12Original', async (page) => {
+    await page.goto(`${origin}/issue-12`);
+    const card = page.locator('.dsh-mmd');
+    await page.waitForFunction(() => ['ok', 'error'].includes(document.querySelector('.dsh-mmd')?.dataset.state));
+    assert.equal(await card.getAttribute('data-state'), 'ok', await card.locator('.dsh-mmd-error').textContent());
+    const svg = card.locator('.dsh-mmd-pane svg');
+    assert.equal(await svg.locator('g.node').count(), 6);
+    assert.match(await svg.textContent(), /"关联在\+拒连\/超时"/);
+    assert.ok(await svg.locator('br').count() > 0, 'label line breaks must remain visible');
+    await card.getByRole('button', { name: '编辑', exact: true }).click();
+    const original = await card.locator('textarea').inputValue();
+    assert.equal(original, issue12);
+    const exported = await download(page, card, '下载 .mmd');
+    assert.equal(exported.bytes.toString('utf8'), issue12);
+    return { nodes: 6, quotesAndBreaksPreserved: true, sourceExportUnchanged: true };
+  });
+
   for (const [scenario, fail, message] of [
     ['runtimeModuleRetry', (route) => route.fulfill({ contentType: 'text/javascript', body: 'throw new Error("module evaluation failed");' }), /模块无法启动/],
     ['runtimeDownloadRetry', (route) => route.abort('failed'), /无法下载 Mermaid 渲染器文件/],
@@ -99,6 +236,38 @@ try {
       return true;
     });
   }
+
+  await run('codeRetryExport', async (page) => {
+    let attempts = 0;
+    await page.route(moduleRoutes, (route) => ++attempts === 1 ? route.abort() : route.continue());
+    await page.goto(`${origin}/code-retry-export`);
+    const card = page.locator('.dsh-mmd');
+    await card.locator('.dsh-mmd-error').waitFor();
+    await card.getByRole('button', { name: '代码', exact: true }).click();
+    await card.getByRole('button', { name: '重试渲染' }).click();
+    await page.locator(readyCard).waitFor();
+    assert.equal(await card.getAttribute('data-view'), 'code');
+    const exported = await download(page, card, '下载 SVG');
+    const viewBox = await page.evaluate((xml) => new DOMParser().parseFromString(xml, 'image/svg+xml')
+      .documentElement.getAttribute('viewBox'), exported.bytes.toString('utf8'));
+    const [, , width] = viewBox.split(/\s+/).map(Number);
+    assert.ok(width > 2000, `the export clipped the title to ${width} units`);
+    const png = await download(page, card, '下载 PNG');
+    assert.ok(png.bytes.readUInt32BE(16) > 2000);
+    await card.getByRole('button', { name: '图形', exact: true }).click();
+    assert.equal(await card.locator('svg').getAttribute('viewBox'), viewBox);
+    return { width, pngWidth: png.bytes.readUInt32BE(16) };
+  });
+
+  await run('mathWithPatchedKaTeX', async (page) => {
+    await page.goto(`${origin}/math`);
+    const card = page.locator(readyCard);
+    const exponent = card.locator('svg .katex msup');
+    await exponent.waitFor({ state: 'attached' });
+    assert.equal(await exponent.textContent(), 'x2');
+    assert.match(await card.locator('svg .katex').textContent(), /x2\+1/);
+    return true;
+  });
 
   await run('runtimeRequestTimeout', async (page) => {
     await page.addInitScript(() => {
@@ -280,9 +449,13 @@ try {
     return { initialWideLabelPx: Math.round(readable * 10) / 10, journeyExportFits: fits };
   });
 
-  for (const [theme, darkHost, expected] of [['default', true, '#fff'], ['neutral', true, '#fff'], ['forest', true, '#fff'], ['dark', false, '#000'], ['base', true, '#fff']]) {
-    await run(`palette-${theme}`, async (page) => {
-      await page.route('**/dsh-mermaid/config.json', (route) => route.fulfill({ json: normalizeRenderConfig({ theme }) }));
+  for (const [theme, darkHost, expected, common] of [
+    ['default', true, '#fff'], ['neutral', true, '#fff'], ['forest', true, '#fff'], ['dark', false, '#000'],
+    ['base', true, '#fff'], ['base', true, '#fff', { fontSize: '16px' }],
+  ]) {
+    await run(`palette-${theme}${common ? '-typography' : ''}`, async (page) => {
+      const style = common ? { theme, themeVariables: { common } } : { theme };
+      await page.route('**/dsh-mermaid/config.json', (route) => route.fulfill({ json: normalizeRenderConfig(style) }));
       if (darkHost) await page.addInitScript(() => {
         document.addEventListener('DOMContentLoaded', () => document.body.setAttribute('data-ds-dark-theme', ''), { once: true });
       });
@@ -292,26 +465,18 @@ try {
       await pane.locator('svg').waitFor();
       const flow = page.locator('.dsh-mmd').nth(1);
       await flow.locator('svg').waitFor();
-      const contrast = await pane.evaluate((element) => {
+      const colors = await pane.evaluate((element) => {
         const label = element.querySelector('text.messageText');
         const link = element.querySelector('.messageLine0');
-        const luminance = (value) => {
-          const channel = value.match(/\d+(?:\.\d+)?/g).slice(0, 3).map((n) => Number(n) / 255)
-            .map((n) => n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4);
-          return 0.2126 * channel[0] + 0.7152 * channel[1] + 0.0722 * channel[2];
-        };
-        const ratio = (first, second) => {
-          const levels = [luminance(first), luminance(second)].sort((a, b) => a - b);
-          return (levels[1] + 0.05) / (levels[0] + 0.05);
-        };
         const background = getComputedStyle(element).backgroundColor;
         const node = document.querySelector('.dsh-mmd-pane g.node');
         return [
-          ratio(getComputedStyle(label).fill, background),
-          ratio(getComputedStyle(link).stroke, background),
-          ratio(getComputedStyle(node.querySelector('.nodeLabel')).color, getComputedStyle(node.querySelector('rect')).fill),
+          [getComputedStyle(label).fill, background],
+          [getComputedStyle(link).stroke, background],
+          [getComputedStyle(node.querySelector('.nodeLabel')).color, getComputedStyle(node.querySelector('rect')).fill],
         ];
       });
+      const contrast = colors.map(([first, second]) => contrastRatio(first, second));
       assert.ok(contrast[0] >= 4.5 && contrast[1] >= 3 && contrast[2] >= 4.5,
         `${theme} message, link and node contrast was ${contrast}`);
       const background = await pane.evaluate((element) => element.style.getPropertyValue('--dsh-mmd-diagram-background'));
@@ -326,6 +491,52 @@ try {
         nodeContrast: Math.round(contrast[2] * 100) / 100, background };
     });
   }
+
+  await run('palette-base-node-fill', async (page) => {
+    let variables;
+    await page.route('**/dsh-mermaid/config.json', (route) =>
+      route.fulfill({ json: normalizeRenderConfig({ theme: 'base', themeVariables: { common: variables } }) }));
+    await page.addInitScript(() => {
+      const dark = new URLSearchParams(location.search).get('hostTheme') === 'dark';
+      document.addEventListener('DOMContentLoaded', () => document.body.toggleAttribute('data-ds-dark-theme', dark), { once: true });
+    });
+    const cases = [
+      { name: 'lightFillOnDarkHost', dark: true, variables: { mainBkg: '#e0e7ff' }, fill: 'rgb(224, 231, 255)', background: '#000' },
+      { name: 'darkFillOnLightHost', dark: false, variables: { mainBkg: '#1e293b' }, fill: 'rgb(30, 41, 59)', background: '#fff' },
+      { name: 'middleTone', dark: true, variables: { primaryColor: '#777' }, fill: 'rgb(119, 119, 119)', background: '#000' },
+      { name: 'explicitTextAndDarkMode', dark: false, variables: { mainBkg: '#e0e7ff', primaryTextColor: '#0055aa', darkMode: true },
+        fill: 'rgb(224, 231, 255)', text: 'rgb(0, 85, 170)', background: '#000' },
+    ];
+    const nodePaint = (pane) => pane.locator('svg').evaluate((element) => {
+      const node = element.querySelector('g.node');
+      return {
+        fill: getComputedStyle(node.querySelector('rect')).fill,
+        text: getComputedStyle(node.querySelector('.nodeLabel')).color,
+        background: element.parentElement.style.getPropertyValue('--dsh-mmd-diagram-background'),
+      };
+    });
+    const measurements = {};
+    for (const sample of cases) {
+      variables = sample.variables;
+      await page.goto(`${origin}/retry?hostTheme=${sample.dark ? 'dark' : 'light'}`);
+      const pane = page.locator(readyCard).locator('.dsh-mmd-pane');
+      const paint = await nodePaint(pane);
+      assert.equal(paint.fill, sample.fill);
+      assert.equal(paint.background, sample.background);
+      const contrast = contrastRatio(paint.fill, paint.text);
+      if (sample.text) assert.equal(paint.text, sample.text);
+      else assert.ok(contrast >= 4.5, `${sample.name} node contrast was ${contrast}`);
+      measurements[sample.name] = Math.round(contrast * 100) / 100;
+    }
+    variables = { mainBkg: '#e0e7ff' };
+    await page.goto(`${origin}/palette-node-text-override?hostTheme=dark`);
+    const cards = page.locator(readyCard);
+    await cards.nth(1).waitFor();
+    assert.equal((await nodePaint(cards.first().locator('.dsh-mmd-pane'))).text, 'rgb(0, 85, 170)');
+    assert.equal((await nodePaint(cards.nth(1).locator('.dsh-mmd-pane'))).text, 'rgb(51, 51, 51)');
+    measurements.perDiagramOverridePreserved = true;
+    return measurements;
+  });
 
   await run('pngLimitsAndFailure', async (page) => {
     await page.goto(`${origin}/retry`);
@@ -358,6 +569,7 @@ try {
     return sizes;
   });
 
+  if (smokeCases) assert.deepEqual(new Set(Object.keys(report)), smokeCases);
   console.log(JSON.stringify(report));
 } finally {
   await browser?.close();

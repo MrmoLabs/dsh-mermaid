@@ -11,7 +11,13 @@ All notable changes to this project are documented in this file.
 - Preserve existing colors and variables when repairing invalid settings, and avoid unnecessary save prompts. Base color and node fill can be adjusted independently.
 - Fix preview updates during IME composition and rapid source/theme changes. Preserve fullscreen zoom during updates and keep Reset/export working after a failed preview update.
 - Preserve init directives when recovering flowchart labels with unquoted parentheses, and fix gradient borders in fullscreen diagrams.
+- Recover embedded quotes in flowchart labels containing plain HTML line breaks while preserving the original Mermaid source.
 - Update Web/Desktop compatibility, installation and upgrade guidance, including saved-profile preservation and fixed-theme contrast limitations.
+- Measure diagram bounds before exporting SVG or PNG after a retry in Code view.
+- Keep Base nodes readable when only typography is customized.
+- Choose a readable default node label color for an opaque hex fill when node text is left unset in Base.
+- Pin the bundled KaTeX renderer to 0.18.2.
+- Distinguish the npm release from editing and PNG features in the source build.
 
 ## [0.4.5] - 2026-11-06
 

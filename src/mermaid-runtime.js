@@ -51,7 +51,8 @@ async function isSourceFailure(error, source) {
 function normalizeFlowchartLabels(source, token) {
   return source.replace(FLOWCHART_TOKEN, (match, edgeLabel, nodeLabel) => {
     const label = edgeLabel ?? nodeLabel;
-    if (!label || /[`[\]{}<>|;\\]/.test(label)) return match;
+    // Ignore plain line-break tags when checking the label, keeping the original markup.
+    if (!label || /[`[\]{}<>|;\\]/.test(label.replace(/<br[ \t]*\/?>/gi, ''))) return match;
     // These prefixes also occur in non-rectangular node syntax.
     if (nodeLabel && /^\s*[(/]/.test(label)) return match;
 
