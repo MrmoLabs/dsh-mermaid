@@ -16,7 +16,7 @@ Requires DeepSeek Harness (DSH) and **Node.js 22.19 or later**. Commands below u
 
 ### 1. Install
 
-The screenshots and walkthrough use the current repository build. The npm `0.4.5` release includes Diagram and Code views, fullscreen, and SVG downloads. If your installed version lacks a feature shown here, see the [changelog](CHANGELOG.md) or [install the repository build](#advanced-usage).
+The walkthrough covers `0.5.0`, which adds inline editing, rendering-style settings, streaming previews, and PNG downloads. If you use an earlier version, see the [update instructions](#update-and-uninstall) and the [changelog](CHANGELOG.md).
 
 With a global `dsh` command, install the npm release into your Web profile:
 
@@ -159,7 +159,7 @@ For Web, you can replace the leading `dsh` with `npx.cmd --yes @deepseek-ai/dsh`
 
 | Symptom | What to check |
 | --- | --- |
-| No Diagram or Code controls | Check the active profile, restart DSH, and try an explicit `mermaid` fenced block. For Edit, also check that you installed the repository build or a release that includes it. |
+| No Diagram, Code, or Edit controls | Check the active profile, restart DSH, and try an explicit `mermaid` fenced block. Edit requires version `0.5.0` or later. |
 | Source appears with an error | Check the Mermaid syntax and the displayed error. Split diagrams that exceed 50,000 characters or 2,000 lines. The **Edit** view remains available for repairs. |
 | Preview says it was not updated | The draft is invalid or still rendering. The previous diagram stays available. Fix the source, wait for the preview to update, or use **Restore original**. |
 | Fullscreen or image export is unavailable | Wait for the reply to finish and the preview to update. The card can still export the current source as `.mmd`. |
@@ -172,7 +172,7 @@ The repository build was checked on **2026-11-20** with DSH **`0.2.2-rc.5`** on 
 
 | Environment | Verified behavior |
 | --- | --- |
-| DSH Web from the Desktop bundle, Windows Chromium | Native code blocks, streaming and history replay, theme settings, and the screenshot workflows above. |
+| DSH Web from the Desktop bundle, Windows Chromium | Native code blocks, streaming and history replay, theme settings, and the screenshot workflows above. An isolated upgrade from `0.4.5` to `0.5.0` preserved profile settings and other plugin dependencies. |
 | Windows Chromium regression suite | Inline editing, touch emulation, SVG and PNG exports, ZenUML, and module-load recovery. |
 | DSH Desktop, native Windows window | In-place plugin update with saved profile settings preserved. The application reopened with the Mermaid card controls available. |
 

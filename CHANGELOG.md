@@ -2,14 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [0.5.0] - 2026-11-20
 
 - Preview valid diagrams during native Markdown streaming and retain the last visible diagram while the source is incomplete.
 - Add touch pinch and double-tap zoom in the card and fullscreen viewer.
 - Recover unquoted parentheses in flowchart diamond labels and support ZenUML diagrams.
 - Load diagram modules on demand and retry failed imports with fresh module URLs.
 - Increase small PNG exports to 3× within the existing dimension and pixel limits.
-
 - Add an inline Mermaid editor with a debounced live preview. Drafts stay on the current page; Copy and Download .mmd preserve the raw draft, and Reset restores the original message source.
 - Keep invalid diagrams editable and retain the last successful preview while a draft is invalid or rendering. Disable fullscreen and SVG export until the preview matches the draft.
 - Add global color themes, independent classic/hand-drawn looks, and custom light/dark color and font settings saved in the DSH profile. Per-diagram Mermaid configuration can override the defaults.
@@ -23,7 +22,6 @@ All notable changes to this project are documented in this file.
 - Keep Base nodes readable when only typography is customized.
 - Choose a readable default node label color for an opaque hex fill when node text is left unset in Base.
 - Pin the bundled KaTeX renderer to 0.18.2.
-- Distinguish the npm release from editing and PNG features in the source build.
 
 ## [0.4.5] - 2026-11-06
 
