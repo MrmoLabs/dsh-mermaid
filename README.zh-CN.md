@@ -6,7 +6,7 @@
 
 [![npm version](https://img.shields.io/npm/v/dsh-mermaid.svg)](https://www.npmjs.com/package/dsh-mermaid)
 
-![DSH 会话中的英文 Mermaid 图表，包含代码 / 图形切换、全屏和 SVG 下载控件](docs/images/conversation-en.jpg)
+![DSH 会话中的 Mermaid 卡片，包含图形、代码、编辑切换，以及画布缩放、全屏和导出菜单](docs/images/conversation-en.jpg)
 
 英文 Pull Request 工作流在 DSH 会话中的实际效果。[查看 Mermaid 源码](docs/examples/pull-request-workflow.mmd)。
 
@@ -16,7 +16,7 @@
 
 ### 1. 安装插件
 
-npm 发布版（`0.4.5`）支持图形和代码视图、全屏和 SVG 下载。下文的内联编辑、`.mmd` 和 PNG 下载以及渲染风格设置适用于尚未发布的源码版。GitHub 安装方式见[进阶使用](#进阶使用)。
+本文截图和功能说明使用当前仓库构建。npm `0.4.5` 发布版支持图形和代码视图、全屏及 SVG 下载。如果你安装的版本缺少下文某项功能，可查看[更新日志](CHANGELOG.md)，或[安装 GitHub 源码版](#进阶使用)。
 
 已全局安装 `dsh` 时，将 npm 发布版安装到 Web profile：
 
@@ -30,7 +30,11 @@ dsh plugin --profile web add -w dsh-mermaid
 npx.cmd --yes @deepseek-ai/dsh plugin --profile web add -w dsh-mermaid
 ```
 
-使用 **DSH Desktop** 时，请使用 Desktop 安装包随附的 `dsh` 命令，并将 `--profile web` 替换为 `--profile desktop`。当前 Desktop 版本的 `desktop` profile 不能通过 npm/npx 版 DSH CLI 管理。Windows 用户若未配置 PATH，可直接调用 `<DSH Desktop 安装目录>\resources\runtime\cli\bin\dsh.cmd`。
+Windows **DSH Desktop** 用户请用应用随附的 CLI 管理 `desktop` profile。将 `<DSH Desktop 安装目录>` 替换为实际路径。
+
+```powershell
+& '<DSH Desktop 安装目录>\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add -w dsh-mermaid
+```
 
 DSH 会通过 pnpm 安装包，并根据包内的 `dsh.bundle` 声明自动注册到所选 profile。安装后重启 DSH Web 或 DSH Desktop；已经打开的 Web 页面也请刷新。
 
@@ -49,11 +53,11 @@ flowchart LR
 
 代码块默认显示为**图形**。用卡片顶部左侧的**图形 / 代码 / 编辑**切换视图。插件也识别 `mermaidjs`、`mmd` 围栏标记，不处理行内代码。
 
-支持 Markdown 围栏插槽的宿主会在生成中显示原始代码块，生成结束后再绘图。无语言标记的围栏仍可按 Mermaid 源码识别。**代码**视图会立即更新原文，切到**图形**或**编辑**时更新预览。
+支持 Markdown 围栏插槽的宿主可在回复生成中绘制预览。首张图出现前显示宿主源码，后续源码尚不完整时保留上一张有效预览。无语言标记的围栏仍可按 Mermaid 源码识别。**代码**视图会立即更新原文，切到**图形**或**编辑**时更新预览。
 
 旧宿主遇到可能尚未写完的源码时，会留在**图形**视图等待更新。也可以打开**编辑**立即检查语法。图表卡片接近视口后才进入渲染队列。
 
-### 3. 编辑源码（源码版）
+### 3. 编辑源码
 
 - **编辑**并排显示源码和图形预览。卡片较窄时，预览移到源码下方。修改后预览会自动更新，渲染提示显示在预览面板内。
 - 草稿仅保存在当前页面，不会写回已发送的消息。刷新页面或卡片重建后草稿会丢失。
@@ -61,29 +65,35 @@ flowchart LR
 - 出现错误后仍可打开**编辑**原地修复。宿主确认代码块已生成完毕时，首次语法错误会自动打开**编辑**。
 - Mermaid 提供行号时，语法提示会标出出错行。展开**错误详情**可以查看解析器输出。
 
-### 4. 查看与导出
+![内联编辑器左侧显示 Mermaid 源码，右侧显示调整为从上到下布局后的实时预览](docs/images/editor-en.jpg)
 
-本节的 PNG 和 `.mmd` 下载以及卡片内画布控件需要源码版。
+### 4. 查看与导出
 
 - 宽图以便于阅读的比例打开，超出画布的部分可拖动查看。**图形**和**编辑**视图都可用预览上方的 **− / 适应卡片 / +** 缩放。双击画布可放大或恢复适应，卡片高度保持稳定。
 - **图形**和**编辑**视图都可从预览上方进入**全屏**，支持鼠标滚轮缩放、拖拽、恢复 100% 和适应窗口。按 `Esc` 关闭。
-- 点击卡片顶部的**导出**，可将完整图表保存为 SVG 或 PNG，或将当前源码保存为 `.mmd`。卡片、全屏、SVG 和带背景的 PNG 会按图表配色使用白底或黑底。PNG 也可选透明背景。导出分辨率最高为 SVG 原始尺寸的 2 倍，最长边不超过 8,192 像素，总面积不超过 1,600 万像素。文件名带有根据源码生成的短后缀。
-- 全屏、SVG 和 PNG 需要与当前草稿一致的预览。草稿正在渲染或有错误时，仍可下载 `.mmd`。
+- 触屏上可以在卡片和全屏视图内双指缩放，双击切换缩放倍率。
+- 点击卡片顶部的**导出**，可将完整图表保存为 SVG 或 PNG，或将当前源码保存为 `.mmd`。卡片、全屏、SVG 和带背景的 PNG 会按图表配色使用白底或黑底。PNG 也可选透明背景。导出分辨率最高为 SVG 原始尺寸的 3 倍，最长边不超过 8,192 像素，总面积不超过 1,600 万像素。文件名带有根据源码生成的短后缀。
+- 回复生成结束且预览与当前源码一致后，即可全屏或导出 SVG、PNG。卡片预览正在渲染或源码有错误时，仍可下载 `.mmd`。
 - **重试渲染**会用当前源码重新运行失败的操作。运行时加载失败后，重试会使用新的模块地址。异步渲染等待超过 15 秒时，下一张排队的图会使用新运行时实例。**复制诊断**合并当前源码和主题下的重复失败，包含图种、Mermaid 版本、失败阶段、可用行号和重试次数。
+
+![导出菜单中的 SVG、透明 PNG、带主题背景的 PNG 和 Mermaid 源码选项](docs/images/export-en.jpg)
+
+<details>
+<summary>查看全屏截图</summary>
 
 ![英文 Mermaid 图表的全屏视图，包含缩放、恢复比例、适应窗口和关闭控件](docs/images/fullscreen-en.jpg)
 
-## 全局渲染风格（源码版，尚未发布）
+</details>
+
+## 全局渲染风格
 
 不配置时保持 `auto` 配色与 `classic` 绘图风格。配色支持 `auto`（跟随 DSH）、`default`、`dark`、`neutral`、`forest`、`base`（自定义）；绘图风格独立支持 `classic` 和 `handDrawn`。手绘在流程图、状态图上已确认有笔触变化，其他类型可能没有明显效果。
 
-以下操作已在 **DSH 0.2.2-rc.3 的 Windows Web 和 Desktop** 中验证：
-
-### 推荐：原生设置表单
+### 原生设置表单
 
 打开侧边栏 **插件 → 已安装插件 → dsh-mermaid**，在“渲染风格”中选择配色主题和绘图风格，无需查找或手写 YAML。
 
-![DSH 原生 Mermaid 渲染风格设置，包含配色与绘图风格选择、常用颜色输入和高级 JSON 编辑入口](docs/images/render-settings-zh-CN.png)
+![渲染风格设置中的 Indigo / Slate 示例、明暗配色标签页、基础主色和独立节点填充设置](docs/images/render-settings-en.png)
 
 - 选择**自定义**后，可在公共／浅色／深色标签页设置字体、字号、基础主色、节点填充、文字、边框和连线颜色。留空继承公共变量或 Mermaid 默认值。
 - **基础主色**对应 `primaryColor`，**节点填充**对应流程图等类型使用的 `mainBkg`。两者独立保存，不会擅自覆盖高级设置；存在独立填充时会显示说明。其他图表可能使用专属变量。
@@ -112,7 +122,7 @@ flowchart LR
 3. 保存为 **UTF-8 无 BOM**。目标版本会通过 profile 文件监视器重载配置；其他宿主版本请重启对应 DSH 应用。当前页面保持原配置快照，不自动刷新，也不跨窗口同步。
 4. **先复制或下载需要保留的卡片草稿**，再刷新页面以应用新快照。刷新会丢失草稿。配置保存在用户层，重启或替换插件 bundle 不会覆盖它；家目录级 `cordis.patch.yml` 和启动时的 `--patch` 覆盖层优先级更高。
 
-自定义仅在 `theme: base` 下生效，使用 `themeVariables.common / light / dark` 三组；[完整 indigo/slate 明暗配置示例](docs/examples/render-style-indigo.patch.yml)可合并到现有用户层文件。公共变量和当前模式分支递归合并，模式分支优先；数组整体替换。缺少分支时只使用公共值和 Mermaid 派生值；未指定 `darkMode` 时采用 DSH 明暗状态。其他配色保留配置中的变量，但不传给 Mermaid。容器与全屏背景始终跟随 DSH，固定主题或自定义颜色需自行确认对比度。
+自定义变量用于 `theme: base`，分为 `themeVariables.common / light / dark` 三组。可从[完整 Indigo / Slate 明暗配置示例](docs/examples/render-style-indigo.patch.yml)开始。当前明暗分支递归覆盖公共值，数组整体替换。自定义节点填充或基础主色后，Base 会根据 DSH 界面明暗推导 `darkMode`。仅修改字体时保留默认浅色节点配色，显式指定的 `darkMode` 优先生效。卡片和全屏使用图表实际配色对应的底色。
 
 配置只允许 `theme`、`look`、`themeVariables`。变量可包含嵌套普通对象、数组、字符串、布尔值和有限数字；禁止 null、危险原型键等非普通 JSON 数据。限制为 UTF-8 JSON 64 KiB、每组从第 1 层计最多 8 层、三组合计 2,048 个属性或元素、单字符串 8,192 字符。未知变量可能被 Mermaid 忽略，结构通过不保证颜色或布局正确。
 
@@ -126,13 +136,10 @@ flowchart LR
 
 ## 功能特性
 
-- **内联编辑**：在卡片内直接修改 Mermaid 源码，防抖更新预览；草稿无效或渲染期间保留上次成功的图。
-- **流式输出适配**：随回复发现新代码块，避免旧的异步渲染覆盖新内容。
-- **主题与语言**：跟随 DSH 浅色 / 深色主题，根据页面和浏览器语言显示简体中文或英文。
-- **大型图表查看**：全屏缩放与拖拽，切换视图时保持工具栏位置稳定。
-- **无障碍支持**：管理键盘焦点，播报渲染与下载状态，为 SVG 提供可访问名称。
-- **内置运行时**：固定打包 Mermaid `11.17.0`，从 DSH 同源按需加载，不依赖运行时 CDN；多图通过串行队列渲染。
-- **源码回退**：使用 Mermaid `securityLevel: strict`；渲染失败时保留上次成功的图，编辑器仍可用。单图超过 50,000 字符或 2,000 行时，在渲染前拒绝处理。
+- **图种支持**。支持 Mermaid 内置图种与 `zenuml` 时序图。Mermaid `11.17.0` 和图种模块由 DSH 同源提供，ZenUML 按需加载。
+- **流程图标签容错**。可修复部分未加引号的括号和标签内嵌引号。代码视图以及 `.mmd` 导出保留原始源码。
+- **渲染限制**。使用 Mermaid `strict` 模式，优先绘制视口附近的卡片。单图超过 50,000 字符或 2,000 行时，在渲染前拒绝处理。
+- **语言与无障碍**。界面按 DSH 和浏览器语言显示简体中文或英文，并提供键盘焦点管理、状态播报和 SVG 可访问名称。
 
 ## 更新与卸载
 
@@ -146,31 +153,30 @@ dsh plugin --profile web update -w dsh-mermaid
 dsh plugin --profile web remove -w dsh-mermaid
 ```
 
-Web 用户可将开头的 `dsh` 替换为 `npx.cmd --yes @deepseek-ai/dsh`；Desktop 用户应使用其随附的 `dsh` 命令。操作完成后重启对应的 DSH 应用，并刷新已打开的 Web 页面。替换插件会保留已保存的 profile 设置；刷新前请先复制或下载需要保留的图表草稿。版本变化见[更新日志](CHANGELOG.md)。
+Web 用户可将开头的 `dsh` 替换为 `npx.cmd --yes @deepseek-ai/dsh`。Desktop 用户应使用应用随附的 CLI，并在更新前从 Windows 系统托盘退出 Desktop，安装后再打开。Web 更新后需重启宿主并刷新已打开的页面。更新会保留已保存的 profile 设置，刷新前请先复制或下载图表草稿。版本变化见[更新日志](CHANGELOG.md)。
 
 ## 常见问题
 
 | 现象 | 排查方法 |
 | --- | --- |
-| 没有出现代码 / 图形 / 编辑按钮 | 确认插件安装在当前使用的 profile 中，重启 DSH 并刷新页面；使用明确标记为 `mermaid` 的围栏代码块。 |
+| 没有出现图形或代码按钮 | 检查当前 profile，重启 DSH，再试明确标记为 `mermaid` 的围栏代码块。若仅缺少编辑按钮，请确认安装的是仓库构建或包含编辑功能的发布版。 |
 | 显示源码和错误提示 | 根据提示检查 Mermaid 语法；超过 50,000 字符或 2,000 行时，拆分为多张图。**编辑**视图仍可继续修复。 |
 | 提示预览未更新 | 草稿无效或仍在渲染。插件会保留上次成功的图。修正源码、等待预览更新，或点击**恢复原文**。 |
-| 无法全屏或导出图片 | 请先让预览更新成功。当前草稿可以随时导出为 `.mmd`。 |
+| 无法全屏或导出图片 | 请等回复结束且预览更新成功。仍可从卡片将当前源码导出为 `.mmd`。 |
+| 渲染器或图种模块加载失败 | 点击**重试渲染**。若反复失败，可将**复制诊断**的结果附在 Issue 中。 |
 | GitHub 安装提示构建脚本被阻止 | 参照下方“安装 GitHub 源码版”中的构建脚本说明。 |
 
 ## 兼容性
 
-当前**尚未发布的源码**于 **2026-11-17** 完成以下验证：
+**2026-11-20** 在 Windows 上使用 DSH **`0.2.2-rc.5`** 验证了当前仓库构建。
 
-| 环境 | DSH 版本 | 已验证功能 |
-| --- | --- | --- |
-| Windows Web / Chrome | `0.2.1-rc.2`、Desktop 随附的 `0.2.2-rc.3` | 八类图表、设置保存与重载、全屏、SVG 导出及包升级。 |
-| Windows Desktop 原生窗口 | `0.2.2-rc.3` | 流程图渲染与编辑、设置保存、全屏、原生 SVG 保存及包升级。 |
-| Linux x64 Web 宿主 / Windows Chrome | `0.2.1-rc.2` | 八类图表、设置保存与重载、全屏、SVG 导出及包升级。 |
+| 环境 | 已验证功能 |
+| --- | --- |
+| Desktop 随附的 DSH Web 宿主、Windows Chromium | 原生代码块、流式预览和历史回放、主题设置，以及上文截图展示的操作。 |
+| Windows Chromium 回归套件 | 内联编辑、模拟触控交互、SVG 和 PNG 导出、ZenUML、分包加载失败恢复。 |
+| Windows DSH Desktop 原生窗口 | 原位更新插件并保留已保存的 profile 设置，重新打开应用后出现 Mermaid 图卡控件。 |
 
-从 npm `0.4.5` 升级到当前构建后，已保存的渲染设置和其他 profile 覆盖项均保留。Linux 宿主使用 Debian 容器与 Node.js 24.22.3；未验证 Linux 原生浏览器或 macOS。
-
-源码版会为固定配色选择匹配的图表底色。在 `base` 中仅调整字体会保留默认的浅色节点配色。自定义节点配色可以显式设置 `darkMode`，并在宿主的浅色、深色模式下分别检查。上方旧截图仍来自 2026-10-28 的 Web 验证。
+此前的 Linux 冒烟测试使用 Debian Web 宿主和 Windows Chromium。当前截图的环境及示例源码见[截图说明](docs/images/README.md)。
 
 DSH 仍处于开发预览阶段，新版可能调整插件加载器或 Markdown DOM。[反馈问题](https://github.com/MrmoLabs/dsh-mermaid/issues)时，请附上 DSH、插件和 Node.js 版本、Web / Desktop profile，以及最小 Mermaid 示例；分享前请移除会话中的私人内容。
 
@@ -185,10 +191,10 @@ DSH 仍处于开发预览阶段，新版可能调整插件加载器或 Markdown 
 npx.cmd -y github:MrmoLabs/dsh-mermaid install
 ```
 
-安装到 DSH Desktop：
+安装到 Windows DSH Desktop 时，请使用应用随附的 CLI，先替换示例中的安装目录。
 
 ```powershell
-npx.cmd -y github:MrmoLabs/dsh-mermaid install --profile desktop
+& '<DSH Desktop 安装目录>\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add -w --save-exact github:MrmoLabs/dsh-mermaid
 ```
 
 仓库安装器会调用 DSH，把 GitHub 源安装到所选 profile，并在安装阶段构建。如果 pnpm 阻止了构建脚本，请把提示中的精确包名加入该 profile 的 `pnpm-workspace.yaml` 的 `allowBuilds` 中，再重新执行命令。完成后重启对应的 DSH 应用。
@@ -202,7 +208,7 @@ npx.cmd -y github:MrmoLabs/dsh-mermaid install --profile desktop
 
 Mermaid 运行时在 DSH Web 浏览器或 Desktop 渲染进程中执行，这些环境具有 `window` 和 `document`。Node.js 宿主通过 HTTP 提供打包文件。Node.js 版本要求适用于安装、构建和插件宿主；本项目目前未提供受支持的 Node.js 校验 API。
 
-`lib/mermaid-runtime.js` 是内部浏览器 bundle，随包发布是为了供插件的同源运行时路由使用，并非公开的包导出。通过解析 `dsh-mermaid/package.json` 再拼接路径访问此文件，会依赖可能变化的内部打包结构。
+插件通过同源路由提供渲染器和图种模块，按需加载图种及 ZenUML 扩展。`lib/mermaid-runtime.js` 和 `lib/mermaid-chunks/` 是内部资源，可能随构建变化。
 
 尝试在服务端复用解析器时，需要处理以下条件：
 

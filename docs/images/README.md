@@ -1,11 +1,11 @@
 # README screenshots
 
-- `conversation-en.jpg`: the Mermaid card inside a DSH conversation.
-- `fullscreen-en.jpg`: the same diagram in the plugin's fullscreen viewer.
-- `render-settings-zh-CN.png`: the Mermaid rendering-style settings page in Simplified Chinese.
+Captured on 2026-11-20 in Windows Chromium using the Web host bundled with DSH Desktop `0.2.2-rc.5`. The isolated profile used the same `dsh-mermaid` package as the local Desktop build (`8dfbf132c40a`), with English controls and the light theme. The example conversation came from a local fixture. [Diagram source](../examples/pull-request-workflow.mmd)
 
-The conversation and fullscreen images show dsh-mermaid 0.4.4 in DSH Web 0.2.1-rc.3 on 2026-10-28, with English labels and the light theme. The settings image shows the unreleased rendering-style feature in DSH Web 0.2.2-rc.3 on 2026-11-16.
+- [Conversation card](conversation-en.jpg) shows the rendered pull request workflow and the card controls.
+- [Inline editor](editor-en.jpg) shows the preview after changing the diagram direction from `LR` to `TD`.
+- [Export menu](export-en.jpg) shows SVG, both PNG options, and `.mmd`.
+- [Fullscreen viewer](fullscreen-en.jpg) shows the original workflow fitted to the viewport.
+- [Rendering settings](render-settings-en.png) shows the Light tab after loading the Indigo / Slate example.
 
-All images are real application captures using sample content in isolated profiles. The conversation's diagram source is in [pull-request-workflow.mmd](../examples/pull-request-workflow.mmd).
-
-For current features and tested environments, see the main [README](../../README.md#compatibility).
+See the [README compatibility section](../../README.md#compatibility) for the broader verification coverage.

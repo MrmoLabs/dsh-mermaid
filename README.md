@@ -6,7 +6,7 @@ Render Mermaid code blocks as interactive SVG diagrams in **DeepSeek Harness Web
 
 [![npm version](https://img.shields.io/npm/v/dsh-mermaid.svg)](https://www.npmjs.com/package/dsh-mermaid)
 
-![English Mermaid diagram in a DSH conversation, with Code / Diagram, Fullscreen, and Download SVG controls](docs/images/conversation-en.jpg)
+![A Mermaid card with Diagram, Code and Edit tabs, canvas zoom, Fullscreen and an Export menu](docs/images/conversation-en.jpg)
 
 An English pull request workflow rendered in a DSH conversation. [View the Mermaid source](docs/examples/pull-request-workflow.mmd).
 
@@ -16,7 +16,7 @@ Requires DeepSeek Harness (DSH) and **Node.js 22.19 or later**. Commands below u
 
 ### 1. Install
 
-The npm release (`0.4.5`) supports diagram and code views, fullscreen, and SVG downloads. Inline editing, `.mmd` and PNG downloads, and rendering-style settings are covered below for the unreleased source build. See [Advanced usage](#advanced-usage) to install from GitHub.
+The screenshots and walkthrough use the current repository build. The npm `0.4.5` release includes Diagram and Code views, fullscreen, and SVG downloads. If your installed version lacks a feature shown here, see the [changelog](CHANGELOG.md) or [install the repository build](#advanced-usage).
 
 With a global `dsh` command, install the npm release into your Web profile:
 
@@ -30,7 +30,11 @@ If `dsh` is not on your PATH, invoke it through npx:
 npx.cmd --yes @deepseek-ai/dsh plugin --profile web add -w dsh-mermaid
 ```
 
-For **DSH Desktop**, use the `dsh` command supplied by the Desktop installation and replace `--profile web` with `--profile desktop`. The npm/npx DSH CLI cannot manage the reserved `desktop` profile on current Desktop versions. If the bundled command is not on your PATH, invoke `<DSH Desktop installation>\resources\runtime\cli\bin\dsh.cmd` on Windows.
+For **DSH Desktop** on Windows, use the CLI bundled with the app to manage its `desktop` profile. Replace `<DSH Desktop installation>` with your installation directory.
+
+```powershell
+& '<DSH Desktop installation>\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add -w dsh-mermaid
+```
 
 DSH installs the package through pnpm and automatically registers its `dsh.bundle` declaration in the selected profile. Restart DSH Web or DSH Desktop after installation; for an already running Web session, refresh the browser page as well.
 
@@ -49,11 +53,11 @@ flowchart LR
 
 The block opens in **Diagram** view by default. Use **Diagram / Code / Edit** at the left of the card header to switch views. The plugin also recognizes `mermaidjs` and `mmd` fences; inline code is left unchanged.
 
-On hosts with the Markdown fence slot, an active reply shows the host's source block until generation finishes. Unlabelled fences can still be recognized from their Mermaid source. In **Code** view, source updates are shown immediately and the preview updates when you open **Diagram** or **Edit**.
+On hosts with the Markdown fence slot, a valid diagram can appear while the reply streams. The host's source remains visible until the first preview. Subsequent incomplete updates keep the last valid preview in place. Unlabelled fences can still be recognized from their Mermaid source. In **Code** view, source updates are shown immediately and the preview updates when you open **Diagram** or **Edit**.
 
 On older hosts, an incomplete code block can stay in **Diagram** while more source arrives. Open **Edit** to check its syntax immediately. Diagram previews are queued when their cards approach the viewport.
 
-### 3. Edit the source (source build)
+### 3. Edit the source
 
 - **Edit** opens a source panel alongside the diagram preview. On narrow cards the preview moves below the source. Changes re-render after a short debounce, and rendering messages appear in the preview panel.
 - The draft is local to this page and is never written back to the sent message. Refreshing the page or rebuilding the card discards it.
@@ -61,27 +65,35 @@ On older hosts, an incomplete code block can stay in **Diagram** while more sour
 - **Edit** remains available on errors. With a host-confirmed final code block, an initial syntax error opens **Edit** automatically.
 - Syntax errors show a line number when Mermaid reports one. Expand **Error details** for the full parser message.
 
-### 4. Explore and export
+![The inline editor with Mermaid source on the left and a live top-down diagram preview on the right](docs/images/editor-en.jpg)
 
-PNG and `.mmd` downloads, and inline canvas controls in this section require the source build.
+### 4. Explore and export
 
 - Wide diagrams open at a readable scale and can overflow the canvas. Use **− / Fit card / +** above the preview in **Diagram** and **Edit**. Double-click the canvas to zoom in or reset to fit. Zooming keeps the card height steady. Drag an overflowing diagram to pan horizontally or vertically.
 - **Fullscreen**, above the preview in **Diagram** and **Edit**, opens a viewer with mouse-wheel zoom, dragging, 100% reset, and fit-to-window controls. Press `Esc` to close it.
-- Open **Export** in the card header to download the entire diagram as SVG or PNG, or the current source as `.mmd`. The preview, fullscreen view, SVG and background PNG use the diagram palette's white or black background. Transparent PNG is also available. PNG uses up to 2× the SVG dimensions, subject to an 8,192-pixel edge and 16-megapixel area limit. File names include a short suffix derived from the source.
-- Fullscreen, SVG, and PNG require an up-to-date preview. The `.mmd` download remains available while the draft is rendering or contains an error.
+- Pinch to zoom and double-tap to toggle zoom on touchscreens, in the card and fullscreen.
+- Open **Export** in the card header to download the entire diagram as SVG or PNG, or the current source as `.mmd`. The preview, fullscreen view, SVG and background PNG use the diagram palette's white or black background. Transparent PNG is also available. PNG uses up to 3× the SVG dimensions, subject to an 8,192-pixel edge and 16-megapixel area limit. File names include a short suffix derived from the source.
+- Fullscreen, SVG, and PNG require an up-to-date preview after the response has finished generating. The `.mmd` download remains available while the preview is rendering or the source contains an error.
 - **Retry rendering** reruns the operation on the current source and uses a fresh module URL after a loading failure. A stalled asynchronous render times out after 15 seconds and the next queued diagram uses a fresh renderer instance. **Copy diagnostics** groups repeated failures for the current source and theme and includes the diagram type, Mermaid version, failure stage, available line number, and retry count.
+
+![The Export menu with SVG, transparent PNG, PNG with the theme background, and Mermaid source downloads](docs/images/export-en.jpg)
+
+<details>
+<summary>Fullscreen viewer screenshot</summary>
 
 ![Fullscreen English Mermaid diagram with zoom, reset, fit-to-window, and close controls](docs/images/fullscreen-en.jpg)
 
-## Global rendering styles (source version, unreleased)
+</details>
+
+## Global rendering styles
 
 The defaults remain `auto` color and `classic` look. Colors support `auto` (follow DSH), `default`, `dark`, `neutral`, `forest`, and `base` (custom). Choose `classic` or `handDrawn` independently. Hand-drawn strokes were confirmed for flowcharts and state diagrams; other types may have little visible difference.
 
-The following workflow was verified with **DSH 0.2.2-rc.3 on Windows Web and Desktop**:
-
-### Recommended: native settings form
+### Native settings form
 
 Open **Plugins → Installed plugins → dsh-mermaid** in the sidebar. The **Rendering style** form offers color and drawing-style selections without locating a file or writing YAML.
+
+![The Rendering style form with the Indigo / Slate example, light and dark tabs, and separate base and node fill colors](docs/images/render-settings-en.png)
 
 - Select **Custom** to edit fonts, font size, base color, node fill/text/border and line colors under Common / Light / Dark. Empty fields inherit common variables or Mermaid defaults.
 - **Base color** edits `primaryColor`; **Node fill** edits `mainBkg`, used by flowcharts and other types. They are saved independently without overwriting advanced settings, with a hint when a separate fill exists. Other diagram types may use dedicated variables.
@@ -110,7 +122,7 @@ The editor loads on demand and uses host form controls, buttons and typography. 
 3. Save as **UTF-8 without BOM**. The tested host watches and reloads the profile patch; restart DSH on other versions. Open pages retain their configuration snapshot, with no automatic refresh or cross-window synchronization.
 4. **Copy or download any card drafts first**, then refresh the page. Refreshing loses drafts. The user layer survives host restarts and bundle replacement; home-level `cordis.patch.yml` and command-line `--patch` overlays take precedence.
 
-Custom variables apply only to `theme: base`, grouped under `themeVariables.common / light / dark`. Merge the [complete indigo/slate example](docs/examples/render-style-indigo.patch.yml) into your existing patch. The active branch recursively overrides common values; arrays replace rather than concatenate. Missing branches use common and Mermaid-derived values. Unspecified `darkMode` follows DSH. Other color themes retain your stored variables but do not pass them to Mermaid. Card and fullscreen backgrounds follow DSH; check contrast when using fixed themes or custom colors.
+Custom variables apply to `theme: base`, grouped under `themeVariables.common / light / dark`. Use the [complete Indigo / Slate example](docs/examples/render-style-indigo.patch.yml) as a starting point. The active branch overrides common values recursively, and arrays replace inherited arrays. With a custom node fill or base color, Base infers `darkMode` from DSH. Typography-only changes keep the stock light node palette. An explicit `darkMode` takes precedence. Card and fullscreen backgrounds follow the diagram's effective palette.
 
 Only `theme`, `look`, and `themeVariables` are accepted. Variables allow nested plain objects, arrays, strings, booleans and finite numbers; null, unsafe prototype keys and non-JSON values are rejected. Limits: 64 KiB UTF-8 JSON, 8 levels counting each group object as level 1, 2,048 aggregate properties/elements across groups, and 8,192 characters per string. Mermaid may ignore unknown variables; structural validation does not guarantee styling or layout.
 
@@ -124,13 +136,10 @@ See [Compatibility](#compatibility) for tested hosts and platform limitations.
 
 ## Features
 
-- **Inline editing** — edit the Mermaid source in place with a debounced live preview, keeping the last good diagram while the draft is invalid or rendering.
-- **Streaming support** — discovers new blocks as responses arrive and prevents older renders from replacing newer content.
-- **Theme and language** — follows DSH's light/dark theme and uses English or Simplified Chinese based on the page and browser language.
-- **Large-diagram viewing** — fullscreen zoom and pan, with a stable toolbar position when switching views.
-- **Accessible controls** — keyboard focus management, render/download announcements, and accessible SVG names.
-- **Bundled runtime** — pins Mermaid `11.17.0`, loads it on demand from DSH's own origin, and requires no runtime CDN. Multiple diagrams render through a serial queue.
-- **Source fallback** — uses Mermaid's `securityLevel: strict`; on a render error the last successful diagram remains and the editor stays available. Diagrams exceeding 50,000 characters or 2,000 lines are rejected before rendering.
+- **Diagram types.** Use Mermaid's built-in types and `zenuml` sequence diagrams. DSH serves Mermaid `11.17.0` and its diagram modules from the same origin, with ZenUML loaded on demand.
+- **Flowchart label recovery.** The renderer can recover some unquoted parentheses and embedded quotes in labels. Code view and `.mmd` downloads preserve the original source.
+- **Render limits.** Diagrams use Mermaid's `strict` mode. The queue prioritizes cards near the viewport and rejects sources over 50,000 characters or 2,000 lines before rendering.
+- **Language and accessibility.** Controls use English or Simplified Chinese according to DSH and browser language. Cards provide keyboard focus handling, render announcements, and accessible SVG names.
 
 ## Update and uninstall
 
@@ -144,31 +153,30 @@ dsh plugin --profile web update -w dsh-mermaid
 dsh plugin --profile web remove -w dsh-mermaid
 ```
 
-For Web, you can replace the leading `dsh` with `npx.cmd --yes @deepseek-ai/dsh`. Desktop requires its bundled `dsh` command. Restart the corresponding DSH application afterward and refresh any open Web page. Saved profile settings are retained when the plugin is replaced; copy or download any diagram drafts before refreshing. See the [changelog](CHANGELOG.md) for release details.
+For Web, you can replace the leading `dsh` with `npx.cmd --yes @deepseek-ai/dsh`. Desktop uses its bundled CLI. Exit Windows Desktop from the system tray before updating and reopen it afterward. For Web, restart the host and refresh open pages. Saved profile settings survive plugin updates. Copy or download diagram drafts before refreshing. See the [changelog](CHANGELOG.md) for release details.
 
 ## Troubleshooting
 
 | Symptom | What to check |
 | --- | --- |
-| No Code / Diagram / Edit controls | Confirm that the plugin is installed in the profile you are using, restart DSH, and refresh the page. Use an explicit `mermaid` fenced block. |
+| No Diagram or Code controls | Check the active profile, restart DSH, and try an explicit `mermaid` fenced block. For Edit, also check that you installed the repository build or a release that includes it. |
 | Source appears with an error | Check the Mermaid syntax and the displayed error. Split diagrams that exceed 50,000 characters or 2,000 lines. The **Edit** view remains available for repairs. |
 | Preview says it was not updated | The draft is invalid or still rendering. The previous diagram stays available. Fix the source, wait for the preview to update, or use **Restore original**. |
-| Fullscreen or image export is unavailable | These actions require a current preview. The `.mmd` export saves the draft at any time. |
+| Fullscreen or image export is unavailable | Wait for the reply to finish and the preview to update. The card can still export the current source as `.mmd`. |
+| The renderer or a diagram module failed to load | Choose **Retry rendering**. If it repeats, attach the output of **Copy diagnostics** to your issue. |
 | GitHub installation reports a blocked build script | Follow the build-script guidance under **Install from GitHub** below. |
 
 ## Compatibility
 
-The current **unreleased source** was checked on **2026-11-17**:
+The repository build was checked on **2026-11-20** with DSH **`0.2.2-rc.5`** on Windows.
 
-| Environment | DSH version | Verified behavior |
-| --- | --- | --- |
-| Windows Web / Chrome | `0.2.1-rc.2`, Desktop-bundled `0.2.2-rc.3` | Eight diagram types, settings save/reload, fullscreen, SVG export and package upgrades. |
-| Windows Desktop native window | `0.2.2-rc.3` | Flowchart rendering/editing, settings save, fullscreen, native SVG saving and package upgrades. |
-| Linux x64 Web host / Windows Chrome | `0.2.1-rc.2` | Eight diagram types, settings save/reload, fullscreen, SVG export and package upgrades. |
+| Environment | Verified behavior |
+| --- | --- |
+| DSH Web from the Desktop bundle, Windows Chromium | Native code blocks, streaming and history replay, theme settings, and the screenshot workflows above. |
+| Windows Chromium regression suite | Inline editing, touch emulation, SVG and PNG exports, ZenUML, and module-load recovery. |
+| DSH Desktop, native Windows window | In-place plugin update with saved profile settings preserved. The application reopened with the Mermaid card controls available. |
 
-Upgrading from npm `0.4.5` to the current build retained saved rendering settings and other profile overrides. The Linux host ran on Node.js 24.22.3 in a Debian container; a Linux-native browser and macOS were not tested.
-
-The source build pairs a fixed theme with a matching diagram background. In `base`, changing typography alone keeps the default light node palette. Custom node palettes can set `darkMode` explicitly and should be checked in both host modes. The earlier screenshots above remain from the 2026-10-28 Web check.
+The earlier Linux smoke test used a Debian Web host with Windows Chromium. See [screenshot provenance](docs/images/README.md) for the current capture environment and sample source.
 
 DSH is a developer preview; newer versions may change its plugin loader or Markdown DOM. When [reporting an issue](https://github.com/MrmoLabs/dsh-mermaid/issues), include your DSH, plugin, and Node.js versions, Web/Desktop profile, and a minimal Mermaid example. Remove private conversation content before sharing.
 
@@ -183,10 +191,10 @@ For normal use, prefer the npm release. To install the latest repository source,
 npx.cmd -y github:MrmoLabs/dsh-mermaid install
 ```
 
-For DSH Desktop:
+For DSH Desktop on Windows, use its bundled CLI and replace the example installation directory.
 
 ```powershell
-npx.cmd -y github:MrmoLabs/dsh-mermaid install --profile desktop
+& '<DSH Desktop installation>\resources\runtime\cli\bin\dsh.cmd' plugin --profile desktop add -w --save-exact github:MrmoLabs/dsh-mermaid
 ```
 
 The repository installer asks DSH to install the GitHub source into the selected profile and builds the package during installation. If pnpm blocks a build script, add the exact package key shown by pnpm to `allowBuilds` in that profile's `pnpm-workspace.yaml`, then run the command again. Restart the corresponding DSH application afterward.
@@ -200,7 +208,7 @@ The installer supports English and Simplified Chinese. It checks `DSH_MERMAID_LA
 
 The Mermaid runtime runs in the DSH Web browser or Desktop renderer, where `window` and `document` are available. The Node.js host serves the bundled file over HTTP. The Node.js version requirement covers installation, builds, and the plugin host; this package does not currently provide a supported Node.js validation API.
 
-`lib/mermaid-runtime.js` is an internal browser bundle. It is shipped for the plugin's same-origin runtime route and is not a public package export. Resolving `dsh-mermaid/package.json` and constructing a path to this file depends on internal packaging details that may change.
+The plugin serves the renderer and its diagram modules from the same origin. It loads diagram modules on demand, including the ZenUML extension. `lib/mermaid-runtime.js` and `lib/mermaid-chunks/` are internal assets and may change between builds.
 
 Integrators experimenting with server-side parsing must account for these requirements:
 
