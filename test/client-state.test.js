@@ -67,7 +67,7 @@ test('retries a failed runtime import without changing source or view', async ()
     }`;
   const hooks = registerHooks({
     resolve(specifier, context, nextResolve) {
-      if (!specifier.startsWith('/dsh-mermaid/mermaid-runtime.js?rev=development')) return nextResolve(specifier, context);
+      if (!specifier.startsWith('/dsh-mermaid/runtime/development/')) return nextResolve(specifier, context);
       loads.push(specifier);
       if (loads.length === 1) throw new Error('synthetic runtime load failure');
       return { url: 'data:text/javascript,' + encodeURIComponent(moduleSource), shortCircuit: true };
@@ -96,7 +96,7 @@ test('retries a failed runtime import without changing source or view', async ()
     assert.equal(document.activeElement, codeButton);
     assert.equal(retry.hidden, true);
     await waitFor(harness, () => card.dataset.state === 'ok');
-    assert.deepEqual(loads, ['/dsh-mermaid/mermaid-runtime.js?rev=development', '/dsh-mermaid/mermaid-runtime.js?rev=development&retry=1']);
+    assert.deepEqual(loads, ['/dsh-mermaid/runtime/development/0/mermaid-runtime.js', '/dsh-mermaid/runtime/development/1/mermaid-runtime.js']);
     assert.equal(card.querySelector('.dsh-mmd-code').textContent, code.textContent);
     assert.equal(card.querySelector('svg text').textContent, code.textContent);
     diagramButton.click();

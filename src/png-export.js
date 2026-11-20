@@ -5,7 +5,7 @@ const MAX_PIXELS = 16_000_000;
 
 async function rasterizeSvg(svg, background) {
   const { width, height } = svgDimensions(svg);
-  const scale = Math.min(2, MAX_EDGE / Math.max(width, height), Math.sqrt(MAX_PIXELS / width / height));
+  const scale = Math.min(3, MAX_EDGE / Math.max(width, height), Math.sqrt(MAX_PIXELS / width / height));
   const pixelWidth = Math.max(1, Math.floor(width * scale));
   const pixelHeight = Math.max(1, Math.floor(height * scale));
   const clone = svg.cloneNode(true);

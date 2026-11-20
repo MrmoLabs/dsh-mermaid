@@ -5,13 +5,14 @@ import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { apply } from '../lib/index.js';
+import { apply, RUNTIME_PREFIX, runtimeUrl } from '../lib/index.js';
 import { normalizeRenderConfig } from '../src/render-config.js';
 
 const args = process.argv.slice(2);
 const smokeCases = args[0] === '--smoke' ? new Set([
   'issue1InvalidSource', 'issues4And7Titlebar', 'issue6TooltipOverflow', 'issues8And10ExportAndDraft',
   'issue9Original', 'issue12Original', 'codeRetryExport', 'palette-base-typography', 'palette-base-node-fill',
+  'diamondAndZenUml', 'touchCanvas', 'runtimeChunkRetry',
 ]) : null;
 const [playwrightModule, executablePath] = smokeCases ? args.slice(1) : args;
 const { chromium } = await import(playwrightModule ? pathToFileURL(resolve(playwrightModule)).href : 'playwright-core');
@@ -47,16 +48,18 @@ const fixtures = {
   '/palette': codeBlock('sequenceDiagram\n Alice->>Bob: Message') + codeBlock(basic),
   '/palette-node-text-override': codeBlock('---\nconfig:\n  theme: base\n  themeVariables:\n    primaryTextColor: "#0055aa"\n---\n' + basic) + codeBlock(basic),
   '/math': codeBlock('flowchart LR\nA["$$x^2+1$$"]-->B'),
+  '/expanded-compat': codeBlock('flowchart LR\nA{Check(input)?} --> B') + '<div style="height:1600px"></div>'
+    + codeBlock('zenuml\nAlice->Bob: Hello'),
 };
 const client = await readFile('lib/client.js');
-const runtime = await readFile('lib/mermaid-runtime.js');
+const referenceRuntime = `export * from '${runtimeUrl(999)}';export {default} from '${runtimeUrl(999)}';`;
 const server = createServer((request, response) => {
   const { pathname } = new URL(request.url, 'http://localhost');
-  const route = routes.get(pathname);
+  const route = routes.get(pathname) || (pathname.startsWith(`${RUNTIME_PREFIX}/`) && routes.get(RUNTIME_PREFIX));
   if (route) return void route.handler(request, response);
   if (pathname === '/client.js' || pathname === '/engine.js') {
     response.writeHead(200, { 'content-type': 'text/javascript' });
-    response.end(pathname === '/client.js' ? client : runtime);
+    response.end(pathname === '/client.js' ? client : referenceRuntime);
     return;
   }
   if (Object.hasOwn(fixtures, pathname)) {
@@ -72,7 +75,7 @@ const server = createServer((request, response) => {
 });
 await new Promise((ready) => server.listen(0, '127.0.0.1', ready));
 const origin = `http://127.0.0.1:${server.address().port}`;
-const moduleRoutes = '**/dsh-mermaid/mermaid-runtime.js?*';
+const moduleRoutes = /\/dsh-mermaid\/runtime\/[^/]+\/\d{1,2}\/mermaid-runtime\.js$/;
 const readyCard = '.dsh-mmd[data-state="ok"]';
 const report = {};
 let browser;
@@ -232,7 +235,7 @@ try {
       await page.getByRole('button', { name: '重试渲染' }).click();
       await page.locator(readyCard).waitFor();
       assert.equal(urls.length, 2);
-      assert.equal(new URL(urls[1]).searchParams.get('retry'), '1');
+      assert.match(urls[1], /\/1\/mermaid-runtime\.js$/);
       return true;
     });
   }
@@ -269,6 +272,95 @@ try {
     return true;
   });
 
+  await run('diamondAndZenUml', async (page) => {
+    const chunkRequests = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/mermaid-chunks/')) chunkRequests.push(request.url());
+    });
+    await page.goto(`${origin}/expanded-compat`);
+    const [diamond, zen] = [0, 1].map((index) => page.locator('.dsh-mmd').nth(index));
+    await diamond.locator('svg .node polygon').waitFor();
+    assert.match(await diamond.locator('svg').textContent(), /Check\(input\)\?/);
+    const original = await download(page, diamond, '下载 .mmd');
+    assert.equal(original.bytes.toString('utf8'), 'flowchart LR\nA{Check(input)?} --> B');
+    assert.ok(!chunkRequests.some((url) => url.includes('/zenuml-definition-')));
+    const firstDiagramChunks = chunkRequests.length;
+    await zen.scrollIntoViewIfNeeded();
+    const zenSvg = zen.locator('.dsh-mmd-pane > svg');
+    await zenSvg.waitFor();
+    assert.match(await zenSvg.textContent(), /Hello/);
+    assert.ok(chunkRequests.some((url) => url.includes('/zenuml-definition-')));
+    const png = await download(page, zen, '下载 PNG');
+    assert.ok(png.bytes.readUInt32BE(16) > 0);
+    return { firstDiagramChunks, zenUmlLoadedOnDemand: true };
+  });
+
+  await run('runtimeChunkRetry', async (page) => {
+    const urls = [];
+    await page.route(/\/mermaid-chunks\/flowDiagram-[^/]+\.js$/, (route) => {
+      urls.push(route.request().url());
+      return urls.length === 1 ? route.abort() : route.continue();
+    });
+    await page.goto(`${origin}/retry`);
+    const card = page.locator('.dsh-mmd[data-state="error"]');
+    await card.waitFor();
+    assert.match(await card.textContent(), /无法下载 Mermaid 渲染器文件/);
+    await card.getByRole('button', { name: '重试渲染' }).click();
+    await page.locator(readyCard).waitFor();
+    assert.equal(urls.length, 2);
+    assert.match(urls[0], /\/0\/mermaid-chunks\//);
+    assert.match(urls[1], /\/1\/mermaid-chunks\//);
+    return true;
+  });
+
+  await run('touchCanvas', async (page) => {
+    await page.goto(`${origin}/geometry`);
+    const card = page.locator(readyCard).first();
+    await card.waitFor();
+    const session = await page.context().newCDPSession(page);
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 2 });
+    const touch = (type, ...touchPoints) => session.send('Input.dispatchTouchEvent', { type, touchPoints });
+    const center = async (locator) => {
+      const bounds = await locator.boundingBox();
+      return { x: Math.round(bounds.x + bounds.width / 2), y: Math.round(bounds.y + bounds.height / 2) };
+    };
+    async function pinch(locator) {
+      const { x, y } = await center(locator);
+      const pair = (offset) => [{ x: x - offset, y, id: 0 }, { x: x + offset, y, id: 1 }];
+      await touch('touchStart', ...pair(20));
+      await touch('touchMove', ...pair(60));
+      await touch('touchEnd');
+    }
+    const pane = card.locator('.dsh-mmd-pane');
+    const inlineScale = () => pane.evaluate((node) => Number(node.style.getPropertyValue('--dsh-mmd-inline-scale')));
+    const height = (await card.boundingBox()).height;
+    await pinch(pane);
+    assert.equal(await inlineScale(), 3);
+    assert.equal((await card.boundingBox()).height, height);
+    const point = await center(pane);
+    for (let tap = 0; tap < 2; tap += 1) {
+      await touch('touchStart', { ...point, id: 0 });
+      await touch('touchEnd');
+    }
+    assert.equal(await inlineScale(), 1);
+    await card.getByRole('button', { name: '编辑', exact: true }).click();
+    await pane.scrollIntoViewIfNeeded();
+    const editorHeight = (await card.boundingBox()).height;
+    await pinch(pane);
+    assert.equal(await inlineScale(), 3);
+    assert.equal((await card.boundingBox()).height, editorHeight);
+    await card.getByRole('button', { name: '全屏', exact: true }).click();
+    const viewport = page.locator('.dsh-mmd-viewer-viewport');
+    const fullscreenScale = () => viewport.evaluate((node) => {
+      const transform = getComputedStyle(node.querySelector('.dsh-mmd-viewer-stage')).transform;
+      return new DOMMatrix(transform).a;
+    });
+    const before = await fullscreenScale();
+    await pinch(viewport);
+    assert.ok(await fullscreenScale() > before);
+    return { fixedCardHeight: height, doubleTapReset: true, editorPinch: true, fullscreenPinch: true };
+  });
+
   await run('runtimeRequestTimeout', async (page) => {
     await page.addInitScript(() => {
       const schedule = window.setTimeout;
@@ -290,7 +382,7 @@ try {
     assert.match(await error.textContent(), /加载超时/);
     await page.getByRole('button', { name: '重试渲染' }).click();
     await page.locator(readyCard).waitFor();
-    assert.equal(new URL(requests[1]).searchParams.get('retry'), '1');
+    assert.match(requests[1], /\/1\/mermaid-runtime\.js$/);
     await pending.abort();
     assert.equal(await page.locator(readyCard).count(), 1);
     return true;
@@ -354,7 +446,7 @@ try {
     assert.match(await cards.nth(0).locator('.dsh-mmd-error').textContent(), /渲染超时/);
     assert.equal(await page.evaluate(() => window.stalledRenderAborted), true);
     assert.equal(requests.length, 2);
-    assert.equal(new URL(requests[1]).searchParams.get('retry'), '1');
+    assert.match(requests[1], /\/1\/mermaid-runtime\.js$/);
     await cards.nth(0).getByRole('button', { name: '重试渲染' }).click();
     await cards.nth(0).locator('svg').waitFor();
     return true;
@@ -545,7 +637,7 @@ try {
     const sizes = await page.evaluate(async () => {
       const { rasterizeSvg } = await import('/engine.js');
       const result = [];
-      for (const [w, h] of [[20000, 10000], [30000, 1]]) {
+      for (const [w, h] of [[20000, 10000], [30000, 1], [100, 50]]) {
         const svg = new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}"/></svg>`, 'image/svg+xml').documentElement;
         const image = await createImageBitmap(await rasterizeSvg(document.importNode(svg, true)));
         result.push([image.width, image.height]);
@@ -555,6 +647,7 @@ try {
     });
     assert.ok(sizes[0][0] * sizes[0][1] <= 16_000_000 && sizes[0][0] * sizes[0][1] > 15_900_000);
     assert.deepEqual(sizes[1], [8192, 1]);
+    assert.deepEqual(sizes[2], [300, 150]);
     await page.evaluate(() => {
       const encode = HTMLCanvasElement.prototype.toBlob;
       HTMLCanvasElement.prototype.toBlob = function (callback) {

@@ -42,7 +42,7 @@ try {
   let diagramRuntimeRequests = 0;
   page.on('request', (request) => {
     if (new URL(request.url()).pathname === '/dsh-mermaid/settings-runtime.js') settingsRequests++;
-    if (new URL(request.url()).pathname === '/dsh-mermaid/mermaid-runtime.js') diagramRuntimeRequests++;
+    if (new URL(request.url()).pathname.endsWith('/mermaid-runtime.js')) diagramRuntimeRequests++;
   });
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });

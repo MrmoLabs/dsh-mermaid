@@ -11,20 +11,18 @@ import { DEFAULT_STYLE, effectiveStyle, styleKey } from './render-config.js';
 import { createStyleLoader } from './style-loader.js';
 import { FENCE_SELECTOR, registerNativeFences } from './fence-registration.js';
 import { registerNativeSettings } from './settings-registration.js';
+import { runtimeUrl } from './runtime-url.js';
 
 const TAG_ID = 'dsh-mermaid/css';
 const STABLE_MS = 300;
 const RENDER_DEBOUNCE_MS = 500;
+const STREAM_PREVIEW_MS = 250;
 const MAX_SOURCE_CHARS = 50_000;
 const MAX_SOURCE_LINES = 2_000;
 const RUNTIME_LOAD_TIMEOUT_MS = 12_000;
 const RUNTIME_RENDER_TIMEOUT_MS = 15_000;
 const LOAD_ERRORS = { 'load-module': 'runtimeLoadFailed', 'load-fetch': 'runtimeFetchFailed', 'load-timeout': 'runtimeLoadTimeout' };
 const RETRYABLE_RENDER_ERRORS = new Set([...Object.values(LOAD_ERRORS), 'runtimeRenderFailed', 'runtimeRenderTimeout', 'missingSvg']);
-const RUNTIME_REVISION = typeof __DSH_MERMAID_RUNTIME_REV__ === 'undefined'
-  ? 'development'
-  : __DSH_MERMAID_RUNTIME_REV__;
-const RUNTIME_URL = `/dsh-mermaid/mermaid-runtime.js?rev=${RUNTIME_REVISION}`;
 const ENGINE_VERSION = typeof __DSH_MERMAID_VERSION__ === 'undefined' ? 'development' : __DSH_MERMAID_VERSION__;
 
 let uid = 0;
@@ -77,10 +75,14 @@ function retireRuntime() {
   runtimeRetry += 1;
 }
 
+function isModuleLoadError(error) {
+  return /failed to fetch|loading module|module script/i.test(error?.message);
+}
+
 function loadMermaidRuntime() {
   if (mermaidRuntime) return Promise.resolve(mermaidRuntime);
   if (!runtimePromise) {
-    const url = runtimeRetry ? `${RUNTIME_URL}&retry=${runtimeRetry}` : RUNTIME_URL;
+    const url = runtimeUrl(runtimeRetry);
     const timeout = new Error('Mermaid runtime load timed out');
     runtimePromise = withDeadline(import(url), RUNTIME_LOAD_TIMEOUT_MS, timeout)
       .then((module) => {
@@ -98,7 +100,7 @@ function loadMermaidRuntime() {
       })
       .catch((error) => {
         runtimeLoadFailure = error === timeout ? 'load-timeout'
-          : /failed to fetch|loading module|module script/i.test(error?.message) ? 'load-fetch' : 'load-module';
+          : isModuleLoadError(error) ? 'load-fetch' : 'load-module';
         throw error;
       });
   }
@@ -144,7 +146,7 @@ function matchingPreview(entry) {
 }
 
 function readyPreview(entry) {
-  return entry.lastRenderState === 'ok' && !entry.previewNeedsMeasurement ? matchingPreview(entry) : null;
+  return !entry.streaming && entry.lastRenderState === 'ok' && !entry.previewNeedsMeasurement ? matchingPreview(entry) : null;
 }
 
 function canRestorePreview(entry) {
@@ -188,6 +190,7 @@ function loadStyle(owner) {
 function setActionAvailability(entry) {
   const ready = Boolean(readyPreview(entry));
   entry.btnFullscreen.disabled = !ready;
+  entry.btnEdit.disabled = entry.streaming;
   entry.btnDownloadSvg.disabled = !ready;
   entry.btnDownloadPng.disabled = entry.btnDownloadPngBackground.disabled = !ready || entry.pngPending;
   entry.btnReset.disabled = !entry.draftDirty;
@@ -403,8 +406,10 @@ function setEntryRendered(entry) {
   entry.pane.dataset.state = 'ok';
   entry.errorEl.textContent = '';
   setErrorDetails(entry);
-  setNotice(entry, null);
-  setEntryStatus(entry, 'rendered');
+  entry.wrapper.toggleAttribute('data-stream-preview', entry.streaming);
+  entry.wrapper.inert = false;
+  setNotice(entry, entry.streaming ? 'streamingPreview' : null);
+  setEntryStatus(entry, entry.streaming ? 'streamingPreview' : 'rendered');
   setActionAvailability(entry);
   if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.setUpdating(false);
 }
@@ -430,6 +435,7 @@ function setEntryLoading(entry, key = 'rendering') {
 }
 
 function setEntryError(entry, key, parameters, statusKey = key) {
+  if (entry.streaming) return setEntryLoading(entry, 'streamingPreview');
   const message = renderMessage(key, parameters);
   const hasSvg = Boolean(entry.pane.querySelector('svg'));
   entry.wrapper.dataset.state = 'error';
@@ -473,6 +479,7 @@ function setEntryError(entry, key, parameters, statusKey = key) {
 }
 
 function setEntryEmpty(entry, key = 'emptyDraft') {
+  if (entry.streaming) return setEntryLoading(entry, 'streamingPreview');
   const hasSvg = Boolean(entry.pane.querySelector('svg'));
   const statusKey = hasSvg && key === 'emptyDiagram' ? 'emptyDiagramStale' : key;
   entry.wrapper.dataset.state = 'empty';
@@ -587,7 +594,7 @@ function createButton(kind = '') {
   return button;
 }
 
-function createEntry(code, nativeSource) {
+function createEntry(code, nativeSource, streaming = false) {
   const raw = nativeSource ?? code.textContent ?? '';
   const wrapper = document.createElement('div');
   wrapper.className = 'dsh-mmd';
@@ -713,7 +720,7 @@ function createEntry(code, nativeSource) {
     btnFullscreen, btnDownloadSvg, btnDownloadPng, btnDownloadPngBackground, btnCopy, btnDownloadMmd, btnRetry, btnDiagnostics,
     exportButton, exportMenu, pngPending: false,
     zoomOut, zoomFit, zoomIn, inlinePreview: null,
-    nativeSource, draft: raw, draftDirty: false, composing: false,
+    nativeSource, streaming, draft: raw, draftDirty: false, composing: false,
     lastRendered: '', lastRenderedStyleKey: '', lastRenderState: 'idle',
     targetStyleKey: currentStyleKey(), mountId: mount.id,
     retryCount: 0, failureStage: '', diagnosticFailures: new Map(),
@@ -762,7 +769,7 @@ function createEntry(code, nativeSource) {
     if (btnRetry.hidden) return;
     const hadFocus = document.activeElement === btnRetry;
     entry.retryCount += 1;
-    if (runtimeLoadFailure) retireRuntime();
+    if (runtimeLoadFailure || (entry.failedRuntime && entry.failedRuntime === mermaidRuntime)) retireRuntime();
     scheduleRender(entry, 0, true);
     if (hadFocus) bar.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
   });
@@ -803,9 +810,11 @@ function createEntry(code, nativeSource) {
   wrapper._dshCode = code;
   wrappers.add(wrapper);
   if (nativeSource !== undefined) {
+    wrapper.toggleAttribute('data-streaming', streaming);
+    wrapper.inert = streaming;
     code.append(wrapper);
     mount.viewport?.observe(wrapper);
-    scheduleRender(entry, 0);
+    scheduleRender(entry, streaming ? STREAM_PREVIEW_MS : 0);
     return;
   }
   entry.stableTimer = setTimeout(() => {
@@ -821,7 +830,7 @@ function createEntry(code, nativeSource) {
   }, STABLE_MS);
 }
 
-function updateNativeCard(seat, source) {
+function updateNativeCard(seat, source, streaming = false) {
   if (!seat) return;
   const entry = entries.get(seat);
   if (!source?.trim()) {
@@ -829,10 +838,15 @@ function updateNativeCard(seat, source) {
     return;
   }
   if (!mount || !seat.isConnected) return;
-  if (!entry) createEntry(seat, source);
-  else if (entry.nativeSource !== source) {
+  if (!entry) createEntry(seat, source, streaming);
+  else if (entry.nativeSource !== source || entry.streaming !== streaming) {
     entry.nativeSource = source;
-    if (!entry.draftDirty) scheduleRender(entry, 0);
+    entry.streaming = streaming;
+    entry.wrapper.toggleAttribute('data-streaming', streaming);
+    entry.wrapper.inert = streaming && !entry.wrapper.hasAttribute('data-stream-preview');
+    if (entry.draftDirty) return;
+    if (streaming && entry.renderTimer) syncDraftFromMessage(entry);
+    else scheduleRender(entry, streaming ? STREAM_PREVIEW_MS : 0);
   }
 }
 
@@ -892,6 +906,7 @@ async function renderDiagram(entry) {
   let controller;
   const renderTimeout = new Error('Mermaid render timed out');
   entry.failureStage = 'load';
+  entry.failedRuntime = null;
   try {
     const [loadedRuntime, snapshot] = await Promise.all([loadMermaidRuntime().catch(() => null), loadStyle(owner)]);
     runtime = loadedRuntime;
@@ -985,6 +1000,13 @@ async function renderDiagram(entry) {
       return;
     }
     if (!isCurrent()) return;
+    if (isModuleLoadError(error) && runtime === mermaidRuntime) {
+      // A failed chunk import is cached by URL. Retry from a fresh module graph.
+      entry.failedRuntime = runtime;
+      entry.failureStage = 'load-fetch';
+      setEntryError(entry, 'runtimeFetchFailed', {});
+      return;
+    }
     const parameters = { detail: error?.message || String(error) };
     if (runtime?.isSourceError?.(error)) {
       if (error.incomplete && entry.nativeSource === undefined && !entry.draftDirty && entry.wrapper.dataset.view === 'diagram') {

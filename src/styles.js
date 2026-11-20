@@ -2,7 +2,8 @@
 const CSS = `
 .dsh-mmd{--dsh-mmd-canvas-height:min(360px,40vh);position:relative;margin:8px 0 10px;border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.25));border-radius:10px;background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.06));overflow:hidden}
 .dsh-mmd-native-fence,.dsh-mmd-native-seat,.dsh-mmd-native-source{display:contents}
-.dsh-mmd-native-seat:not(:empty)+.dsh-mmd-native-source{display:none}
+.dsh-mmd-native-seat:has(>.dsh-mmd:not([data-streaming]),>.dsh-mmd[data-stream-preview])+.dsh-mmd-native-source{display:none}
+.dsh-mmd[data-streaming]:not([data-stream-preview]){height:0;margin:0;padding:0;border:0;overflow:clip;opacity:0;pointer-events:none}
 .dsh-mmd-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));background:var(--dsw-alias-bg-layer-1,transparent)}
 .dsh-mmd-views{display:inline-flex;max-width:100%;padding:2px;gap:2px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.10))}
 .dsh-mmd-file-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:2px;margin-inline-start:auto}
@@ -30,7 +31,7 @@ body[data-ds-dark-theme] .dsh-mmd-view-control[aria-pressed='true']{color:var(--
 .dsh-mmd-preview-controls{display:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:6px}
 .dsh-mmd-preview:has(.dsh-mmd-pane>svg) .dsh-mmd-preview-controls{display:flex;margin-inline-start:auto}
 .dsh-mmd-pane{display:block}
-.dsh-mmd-pane:has(>svg){height:var(--dsh-mmd-canvas-height);display:flex;flex-direction:column;overflow:auto;background-color:var(--dsh-mmd-diagram-background,transparent)}
+.dsh-mmd-pane:has(>svg){height:var(--dsh-mmd-canvas-height);display:flex;flex-direction:column;overflow:auto;touch-action:pan-x pan-y;background-color:var(--dsh-mmd-diagram-background,transparent)}
 .dsh-mmd-pane:focus-visible{outline:2px solid var(--dsw-alias-button-primary-fill,#4c6ef5);outline-offset:-2px}
 .dsh-mmd-pane[data-pannable]{cursor:grab;user-select:none}
 .dsh-mmd-pane[data-dragging]{cursor:grabbing}
@@ -94,7 +95,8 @@ body[data-ds-dark-theme] .dsh-mmd-viewer{background:#121212;color:var(--dsw-alia
 // Keep the views usable while the packaged stylesheet is loading or unavailable.
 const FALLBACK_CSS = `
 .dsh-mmd-native-fence,.dsh-mmd-native-seat,.dsh-mmd-native-source{display:contents}
-.dsh-mmd-native-seat:not(:empty)+.dsh-mmd-native-source,.dsh-mmd+pre{display:none}
+.dsh-mmd-native-seat:has(>.dsh-mmd:not([data-streaming]),>.dsh-mmd[data-stream-preview])+.dsh-mmd-native-source,.dsh-mmd+pre{display:none}
+.dsh-mmd[data-streaming]:not([data-stream-preview]){height:0;margin:0;padding:0;border:0;overflow:clip;opacity:0;pointer-events:none}
 .dsh-mmd-code,.dsh-mmd-editor,.dsh-mmd-preview-controls,.dsh-mmd-error:empty{display:none}
 .dsh-mmd-sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 .dsh-mmd[data-view='code'] .dsh-mmd-preview{display:none}

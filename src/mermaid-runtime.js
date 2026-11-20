@@ -1,4 +1,5 @@
 import mermaid from 'mermaid';
+import zenuml from '@mermaid-js/mermaid-zenuml';
 import { diagramBodyOffset } from './detection.js';
 export { createTooltipPositioner } from './tooltip.js';
 export { preserveViewPosition } from './scroll.js';
@@ -7,9 +8,11 @@ export { createInlinePreview } from './inline-preview.js';
 export { rasterizeSvg } from './png-export.js';
 
 const FLOWCHART_HEADER = /^(?:flowchart|graph)\b/;
-// Skip existing strings, comments and node metadata. Capture simple edge and rectangle labels.
-const FLOWCHART_TOKEN = /"[^"]*"|%%[^\r\n]*|@\{(?:[^"{}]|"[^"]*")*\}|(?:-->|---|==>|-\.->)[ \t]*\|((?:[^"|\r\n]|"[^"]*")*)\||(?<=[\w\p{L}-])\[((?:[^"[\]]|"[^"\r\n]*")*)\](?!\])/gu;
+// Skip existing strings, comments and node metadata. Capture edge, rectangle and diamond labels.
+const FLOWCHART_TOKEN = /"[^"]*"|%%[^\r\n]*|@\{(?:[^"{}]|"[^"]*")*\}|(?:-->|---|==>|-\.->)[ \t]*\|((?:[^"|\r\n]|"[^"]*")*)\||(?<=[\w\p{L}-])\[((?:[^"[\]]|"[^"\r\n]*")*)\](?!\])|(?<=[\w\p{L}-])\{((?:[^"{}\r\n]|"[^"\r\n]*")*)\}(?!\})/gu;
 const PLAIN_PARENTHESIZED_LABEL = /^(?:[^()]*\([^()]*\))+[^()]*$/;
+
+await mermaid.registerExternalDiagrams([zenuml], { lazyLoad: true });
 
 class MermaidSourceError extends Error {
   constructor(error, diagnostic = error) {
@@ -49,16 +52,16 @@ async function isSourceFailure(error, source) {
 }
 
 function normalizeFlowchartLabels(source, token) {
-  return source.replace(FLOWCHART_TOKEN, (match, edgeLabel, nodeLabel) => {
-    const label = edgeLabel ?? nodeLabel;
+  return source.replace(FLOWCHART_TOKEN, (match, edgeLabel, rectangleLabel, diamondLabel) => {
+    const label = edgeLabel ?? rectangleLabel ?? diamondLabel;
     // Ignore plain line-break tags when checking the label, keeping the original markup.
     if (!label || /[`[\]{}<>|;\\]/.test(label.replace(/<br[ \t]*\/?>/gi, ''))) return match;
     // These prefixes also occur in non-rectangular node syntax.
-    if (nodeLabel && /^\s*[(/]/.test(label)) return match;
+    if (rectangleLabel && /^\s*[(/]/.test(label)) return match;
 
     if (token === 'STR') {
       // A leading quote already delimits a Mermaid label. Escape only embedded pairs.
-      if (!nodeLabel || /^\s*"/.test(label) || label.includes('%')) return match;
+      if (!rectangleLabel || /^\s*"/.test(label) || label.includes('%')) return match;
       return match.replaceAll('"', '#quot;');
     }
     if (/^\s*"/.test(label) || /[\r\n]/.test(label) || !PLAIN_PARENTHESIZED_LABEL.test(label)) return match;

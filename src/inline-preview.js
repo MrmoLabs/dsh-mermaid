@@ -1,4 +1,5 @@
 import { svgDimensions } from './svg.js';
+import { bindTouchZoom } from './touch-zoom.js';
 
 const INTERACTIVE = 'a,button,input,select,textarea,[role="button"]';
 
@@ -28,8 +29,8 @@ function createInlinePreview(pane, onZoom, onResize) {
     scale = Math.max(0.5, Math.min(8, nextScale));
     if (fit) pane.setAttribute('data-fit', '');
     update(svg);
-    pane.scrollLeft = scale === 1 ? 0 : centerX * pane.scrollWidth - anchorX;
-    pane.scrollTop = scale === 1 ? 0 : centerY * pane.scrollHeight - anchorY;
+    pane.scrollLeft = fit ? 0 : centerX * pane.scrollWidth - anchorX;
+    pane.scrollTop = fit ? 0 : centerY * pane.scrollHeight - anchorY;
     onZoom?.();
   }
 
@@ -39,11 +40,24 @@ function createInlinePreview(pane, onZoom, onResize) {
     pane.removeAttribute('data-dragging');
   }
 
-  pane.addEventListener('dblclick', (event) => {
-    if (event.target.closest?.(INTERACTIVE)) return;
+  function toggleZoom(x, y) {
     const bounds = pane.getBoundingClientRect();
-    if (scale === 1) zoom(2, event.clientX - bounds.left, event.clientY - bounds.top);
+    if (scale === 1) zoom(2, x - bounds.left, y - bounds.top);
     else zoom(1, undefined, undefined, true);
+  }
+
+  pane.addEventListener('dblclick', (event) => {
+    if (event.sourceCapabilities?.firesTouchEvents || event.target.closest?.(INTERACTIVE)) return;
+    toggleZoom(event.clientX, event.clientY);
+  });
+  const unbindTouch = bindTouchZoom(pane, {
+    zoom(factor, before, after) {
+      const bounds = pane.getBoundingClientRect();
+      zoom(scale * factor, before.x - bounds.left, before.y - bounds.top);
+      pane.scrollLeft += before.x - after.x;
+      pane.scrollTop += before.y - after.y;
+    },
+    doubleTap({ x, y }) { toggleZoom(x, y); },
   });
   pane.addEventListener('pointerdown', (event) => {
     if (pointer || event.button !== 0 || !event.isPrimary || event.pointerType === 'touch') return;
@@ -78,7 +92,7 @@ function createInlinePreview(pane, onZoom, onResize) {
     zoom,
     fit() { zoom(1, undefined, undefined, true); },
     update,
-    dispose() { observer.disconnect(); },
+    dispose() { observer.disconnect(); unbindTouch(); },
   };
 }
 

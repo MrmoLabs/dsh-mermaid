@@ -62,6 +62,7 @@
   "devDependencies": {
     "@deepseek-ai/cosmokit": "1.9.0",
     "@deepseek-ai/schemastery": "3.19.0",
+    "@mermaid-js/mermaid-zenuml": "1.0.1",
     "esbuild": "0.28.2",
     "happy-dom": "21.0.4",
     "katex": "0.18.2",

@@ -29,6 +29,10 @@ await writeFile(join(profile, 'cordis.patch.yml'), [
 const fence = String.fromCharCode(96).repeat(3);
 const cases = {
   pause: { first: `${fence}mermaid\nflowchart LR\nPauseFixture -->`, last: `Continued\n${fence}` },
+  progressive: {
+    first: `${fence}mermaid\nflowchart LR\nProgressiveFixture --> FirstPreview\n`,
+    continuations: [['progressive-invalid', 'FirstPreview -->'], ['progressive-finish', `FinalFixture\n${fence}`]],
+  },
   cancel: { first: `${fence}mermaidjs\nflowchart LR\nCancelFixture -->`, last: `ShouldNeverAppear\n${fence}` },
   limit: { first: `${fence}mmd\nflowchart LR\nLimitFixture -->`, stop: 'max_tokens' },
   replay: {
@@ -57,7 +61,7 @@ const server = createServer(async (req, res) => {
     for await (const chunk of req) chunks.push(chunk);
     const input = JSON.parse(Buffer.concat(chunks).toString());
     const lastUserMessage = input.messages?.findLast(({ role }) => role === 'user');
-    const scenario = JSON.stringify(lastUserMessage || {}).match(/mermaid-acceptance-(pause|cancel|limit|replay)/)?.[1];
+    const scenario = JSON.stringify(lastUserMessage || {}).match(/mermaid-acceptance-(pause|progressive|cancel|limit|replay)/)?.[1];
     modelScenarios.add(scenario);
     const sample = cases[scenario] || { first: 'Local fixture' };
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
@@ -66,14 +70,14 @@ const server = createServer(async (req, res) => {
     event('message_start', { message: { id: `msg_local_${scenario}`, type: 'message', role: 'assistant', model: input.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 120, output_tokens: 0 } } });
     event('content_block_start', { index: 0, content_block: { type: 'text', text: '' } });
     delta(sample.first);
-    if (sample.last) {
+    for (const [name, text] of sample.continuations || (sample.last ? [[scenario, sample.last]] : [])) {
       await new Promise((done) => {
-        if (!gates.has(scenario)) gates.set(scenario, new Set());
-        gates.get(scenario).add(done);
+        if (!gates.has(name)) gates.set(name, new Set());
+        gates.get(name).add(done);
         res.once('close', done);
       });
       if (res.destroyed) return;
-      delta(sample.last);
+      delta(text);
     }
     event('content_block_stop', { index: 0 });
     event('message_delta', { delta: { stop_reason: sample.stop || 'end_turn', stop_sequence: null }, usage: { input_tokens: 120, output_tokens: 50 } });
@@ -119,10 +123,6 @@ try {
       return append.apply(this, nodes);
     };
   });
-  let runtimeRequests = 0;
-  page.on('request', (request) => {
-    if (new URL(request.url()).pathname === '/dsh-mermaid/mermaid-runtime.js') runtimeRequests += 1;
-  });
   await page.goto(url);
   const composer = page.locator('[contenteditable="true"]:visible,textarea:visible').last();
   for (const control of [/^(继续|Continue)$/, /^(开始使用|Get started)$/i]) {
@@ -148,14 +148,31 @@ try {
   await prompt('pause');
   await source('PauseFixture').waitFor();
   await page.waitForTimeout(1250);
-  assert.equal(await card('PauseFixture').count(), 0);
-  assert.equal(runtimeRequests, 0);
+  assert.equal(await card('PauseFixture').locator('svg').count(), 0);
+  assert.ok(await source('PauseFixture').isVisible());
+  assert.notEqual(await card('PauseFixture').getAttribute('data-state'), 'error');
   openGate('pause');
   await rendered('Continued');
 
+  await prompt('progressive');
+  const liveCard = card('ProgressiveFixture');
+  const liveSvg = liveCard.locator('svg');
+  await liveSvg.waitFor();
+  assert.equal(await liveCard.getAttribute('data-streaming'), '');
+  assert.match(await liveSvg.textContent(), /FirstPreview/);
+  assert.ok(await liveCard.getByRole('button', { name: /^(编辑|Edit)$/ }).isDisabled());
+  openGate('progressive-invalid');
+  await page.waitForFunction(() => [...document.querySelectorAll('.dsh-mmd')].some((node) =>
+    node.querySelector('svg')?.textContent.includes('ProgressiveFixture') && node.dataset.state === 'pending'));
+  assert.match(await liveSvg.textContent(), /FirstPreview/);
+  openGate('progressive-finish');
+  await rendered('FinalFixture');
+  assert.equal(await liveCard.getAttribute('data-streaming'), null);
+  assert.match(await liveSvg.textContent(), /FinalFixture/);
+
   await prompt('cancel');
   await source('CancelFixture').waitFor();
-  assert.equal(await card('CancelFixture').count(), 0);
+  assert.equal(await card('CancelFixture').locator('svg').count(), 0);
   await page.getByRole('button', { name: /停止|Stop/i }).last().click();
   await send.waitFor();
   assert.equal(await page.getByText('ShouldNeverAppear', { exact: false }).count(), 0);
@@ -199,7 +216,7 @@ try {
   await checkReplay();
   await page.reload();
   await checkReplay();
-  console.log(JSON.stringify({ host: 'DSH Desktop bundled host', pauseMs: 1250, stopped: true, truncated: true, replayed: true, untagged: true, componentFallback: true }));
+  console.log(JSON.stringify({ host: 'DSH Desktop bundled host', pauseMs: 1250, progressive: true, retainedPreview: true, stopped: true, truncated: true, replayed: true, untagged: true, componentFallback: true }));
 } finally {
   for (const scenario of gates.keys()) openGate(scenario);
   await browser?.close();

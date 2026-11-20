@@ -20,7 +20,7 @@ function registerNativeFences(ctx, hostRequire, updateCard, setActive) {
         return () => updateCard(element, null);
       }, []);
       React.useLayoutEffect(() => {
-        updateCard(seat.current, streaming ? null : code);
+        updateCard(seat.current, code, streaming);
       }, [code, streaming]);
       return React.createElement('div', { className: 'dsh-mmd-native-fence' },
         React.createElement('div', { className: 'dsh-mmd-native-seat', ref: seat }),

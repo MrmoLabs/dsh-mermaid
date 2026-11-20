@@ -1,38 +1,35 @@
-// Compare the shipped runtime with an esbuild split build using local Chromium.
+// Compare the shipped split runtime with a single-file baseline using local Chromium.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { basename, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
-import { apply } from '../lib/index.js';
+import { apply, RUNTIME_PREFIX, runtimeUrl } from '../lib/index.js';
 
-const [playwrightModule, executablePath] = process.argv.slice(2);
+const [playwrightModule, executablePath, baseline] = process.argv.slice(2);
 assert.ok(playwrightModule, 'Pass the installed Playwright module and optional Chromium executable.');
 const { chromium } = await import(pathToFileURL(resolve(playwrightModule)).href);
-const split = await build({
-  entryPoints: { engine: 'src/mermaid-runtime.js' }, outdir: '.runtime/performance-split',
-  write: false, bundle: true, minify: true, splitting: true, platform: 'browser', format: 'esm', target: 'chrome120',
-  legalComments: 'external',
-});
-const splitAssets = new Map(split.outputFiles.filter((file) => file.path.endsWith('.js'))
-  .map((file) => [`/split/${basename(file.path)}`, file.contents]));
-const single = await readFile('lib/mermaid-runtime.js');
+const single = baseline ? await readFile(baseline) : (await build({
+  entryPoints: ['src/mermaid-runtime.js'], write: false, bundle: true, minify: true, platform: 'browser', format: 'esm',
+  target: 'chrome120', alias: { katex: fileURLToPath(import.meta.resolve('katex')) },
+})).outputFiles[0].contents;
 const client = await readFile('lib/client.js');
 const routes = new Map();
 apply({ effect(callback) { callback(); }, webServer: { register(route) { routes.set(route.path, route); } } }, {});
 const blocks = Array.from({ length: 40 }, (_, n) => `<pre><code class="language-mermaid">flowchart LR\n A[Item ${n}]--&gt;B</code></pre>`).join('<div style="height:420px"></div>');
 const server = createServer((req, res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
-  const assets = splitAssets.get(pathname) || (pathname === '/engine.js' && single) || (pathname === '/client.js' && client);
+  const route = routes.get(pathname) || (pathname.startsWith(`${RUNTIME_PREFIX}/`) && routes.get(RUNTIME_PREFIX));
+  const assets = (pathname === '/engine.js' && single) || (pathname === '/client.js' && client);
   if (assets) {
     res.writeHead(200, { 'content-type': 'text/javascript' }).end(assets);
   } else if (pathname === '/conversation') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(`<!doctype html><html lang="en"><body>
       ${blocks}<script>window.__ModuleLoader__={load({factory}){factory(()=>{}).apply({effect(fn){fn()}})}};</script>
       <script src="/client.js"></script></body></html>`);
-  } else if (routes.has(pathname)) {
-    void routes.get(pathname).handler(req, res);
+  } else if (route) {
+    void route.handler(req, res);
   } else {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end('<!doctype html><html><body></body></html>');
   }
@@ -45,7 +42,7 @@ let browser;
 try {
   browser = await chromium.launch({ headless: true, executablePath });
   const report = {};
-  const variants = { single: '/engine.js', split: '/split/engine.js' };
+  const variants = { single: '/engine.js', split: runtimeUrl() };
   for (const [variant, modulePath] of Object.entries(variants)) {
     const measurements = [];
     for (let run = 0; run < 5; run += 1) {
@@ -85,10 +82,10 @@ try {
     report[variant] = Object.fromEntries(Object.keys(measurements[0]).map((key) => [key, round(median(measurements, key))]));
   }
   const page = await browser.newPage({ viewport: { width: 1050, height: 760 } });
-  await page.route('**/dsh-mermaid/mermaid-runtime.js?*', (route) => route.fulfill({
+  await page.route(`**${runtimeUrl()}`, (route) => route.fulfill({
     contentType: 'text/javascript',
-    body: `import { renderMermaid as render } from '/engine.js';
-      export { default, isMermaidSourceError, createInlinePreview, createFullscreenViewer, preserveViewPosition, createTooltipPositioner } from '/engine.js';
+    body: `import { renderMermaid as render } from '${runtimeUrl(999)}';
+      export { default, isMermaidSourceError, createInlinePreview, createFullscreenViewer, preserveViewPosition, createTooltipPositioner } from '${runtimeUrl(999)}';
       export function renderMermaid(id, source, signal) {
         window.renders = (window.renders || 0) + 1;
         if (source.includes('[Item 23]')) window.probeRenders = (window.probeRenders || 0) + 1;

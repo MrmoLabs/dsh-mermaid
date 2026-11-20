@@ -1,5 +1,6 @@
 import { localizeGeneratedSvgTitle, rewriteSvgIds, svgDimensions } from './svg.js';
 import { VIEWER_CSS } from './styles.js';
+import { bindTouchZoom } from './touch-zoom.js';
 
 function createFullscreenViewer({ t }) {
   let viewer = null;
@@ -30,7 +31,8 @@ function createFullscreenViewer({ t }) {
     const dimensions = svgDimensions(svg);
     const width = viewer.viewport.clientWidth || 1200;
     const height = viewer.viewport.clientHeight || 800;
-    viewer.scale = Math.min(4, Math.max(0.1, Math.min((width - 48) / dimensions.width, (height - 48) / dimensions.height)));
+    viewer.fitScale = Math.min(4, Math.max(0.1, Math.min((width - 48) / dimensions.width, (height - 48) / dimensions.height)));
+    viewer.scale = viewer.fitScale;
     viewer.panX = 0;
     viewer.panY = 0;
     updateTransform();
@@ -163,7 +165,7 @@ function createFullscreenViewer({ t }) {
     viewer = {
       overlay, style, title, viewport, stage, status, updating: false, zoomOut, zoomLabel, zoomIn,
       fit: fitButton, close: closeButton, entry: null,
-      scale: 1, panX: 0, panY: 0, dragging: false, pointerId: null,
+      scale: 1, fitScale: 1, panX: 0, panY: 0, dragging: false, pointerId: null,
       lastX: 0, lastY: 0, previousBodyOverflow: '', trigger: null, inertedElements: [],
     };
     zoomOut.addEventListener('click', () => setScale(viewer.scale / 1.2));
@@ -176,17 +178,32 @@ function createFullscreenViewer({ t }) {
     zoomIn.addEventListener('click', () => setScale(viewer.scale * 1.2));
     fitButton.addEventListener('click', fit);
     closeButton.addEventListener('click', close);
+    const anchorAt = (x, y) => {
+      const bounds = viewport.getBoundingClientRect();
+      return { x: x - bounds.left - bounds.width / 2, y: y - bounds.top - bounds.height / 2 };
+    };
+    const pan = (dx, dy) => {
+      viewer.panX += dx;
+      viewer.panY += dy;
+      updateTransform();
+    };
+    bindTouchZoom(viewport, {
+      zoom(factor, before, after) {
+        setScale(viewer.scale * factor, anchorAt(before.x, before.y));
+        pan(after.x - before.x, after.y - before.y);
+      },
+      doubleTap({ x, y }) {
+        if (viewer.scale !== viewer.fitScale) fit();
+        else setScale(viewer.scale * 2, anchorAt(x, y));
+      },
+      pan,
+    });
     viewport.addEventListener('wheel', (event) => {
       event.preventDefault();
-      const bounds = viewport.getBoundingClientRect();
-      const anchor = {
-        x: event.clientX - bounds.left - (bounds.width / 2),
-        y: event.clientY - bounds.top - (bounds.height / 2),
-      };
-      setScale(viewer.scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12), anchor);
+      setScale(viewer.scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12), anchorAt(event.clientX, event.clientY));
     }, { passive: false });
     viewport.addEventListener('pointerdown', (event) => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || event.pointerType === 'touch') return;
       viewer.dragging = true;
       viewer.pointerId = event.pointerId;
       viewer.lastX = event.clientX;
@@ -196,11 +213,9 @@ function createFullscreenViewer({ t }) {
     });
     viewport.addEventListener('pointermove', (event) => {
       if (!viewer.dragging || event.pointerId !== viewer.pointerId) return;
-      viewer.panX += event.clientX - viewer.lastX;
-      viewer.panY += event.clientY - viewer.lastY;
+      pan(event.clientX - viewer.lastX, event.clientY - viewer.lastY);
       viewer.lastX = event.clientX;
       viewer.lastY = event.clientY;
-      updateTransform();
     });
     const stopDragging = (event) => {
       if (!viewer.dragging || event.pointerId !== viewer.pointerId) return;

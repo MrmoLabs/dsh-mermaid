@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -16,11 +16,13 @@ test('browser bundle registers dsh-mermaid and its real runtime respects the doc
   const bundle = await readFile('lib/client.js', 'utf8');
   const runtime = await readFile('lib/mermaid-runtime.js');
   const katexVersion = JSON.parse(await readFile('node_modules/katex/package.json', 'utf8')).version;
-  assert.ok(runtime.includes(`"${katexVersion}"`), 'the browser runtime must embed the pinned KaTeX');
+  const chunkNames = (await readdir('lib/mermaid-chunks')).filter((name) => name.endsWith('.js'));
+  const chunks = await Promise.all(chunkNames.map((name) => readFile(`lib/mermaid-chunks/${name}`)));
+  assert.ok(chunks.some((chunk) => chunk.includes(`"${katexVersion}"`)), 'the browser runtime must embed the pinned KaTeX');
   const runtimeRevision = createHash('sha256').update(runtime).digest('hex').slice(0, 12);
-  assert.ok(bundle.length < 48_000, `client bootstrap unexpectedly grew to ${bundle.length} bytes`);
-  assert.ok(runtime.length > 1_000_000, 'the separately bundled Mermaid runtime is missing');
-  assert.match(bundle, /\/dsh-mermaid\/mermaid-runtime\.js\?rev=/);
+  assert.ok(bundle.length < 50_000, `client bootstrap unexpectedly grew to ${bundle.length} bytes`);
+  assert.ok(runtime.length < 100_000 && chunks.some((chunk) => chunk.length > 100_000), 'the browser entry and heavy diagram modules must be split');
+  assert.match(bundle, /\/dsh-mermaid\/runtime/);
   assert.ok(bundle.includes(runtimeRevision), 'client bootstrap has a stale runtime revision');
   const cardCss = await readFile('lib/card.css');
   const styleRevision = createHash('sha256').update(cardCss).digest('hex').slice(0, 12);
@@ -40,8 +42,22 @@ test('browser bundle registers dsh-mermaid and its real runtime respects the doc
   routes.get(host.CONFIG_PATH).handler({ method: 'GET' }, { writeHead() {}, end(body) { config = JSON.parse(body); } });
   assert.equal(config.style.theme, 'neutral');
   let runtimeStatus;
-  await routes.get(host.RUNTIME_PATH).handler({ method: 'HEAD' }, { writeHead(status) { runtimeStatus = status; }, end() {} });
+  const runtimeRoute = routes.get(host.RUNTIME_PREFIX);
+  assert.equal(runtimeRoute.kind, 'prefix');
+  const runtimeRequest = async (method, url) => {
+    const result = {};
+    await runtimeRoute.handler({ method, url }, { writeHead(status, headers) { result.status = status; result.headers = headers; }, end(body) { result.body = body; } });
+    return result;
+  };
+  ({ status: runtimeStatus } = await runtimeRequest('HEAD', host.runtimeUrl()));
   assert.equal(runtimeStatus, 200, 'built host must resolve its runtime alongside itself');
+  const chunk = new URL(`mermaid-chunks/${chunkNames[0]}`, `http://localhost${host.runtimeUrl(1)}`).pathname;
+  const chunkResponse = await runtimeRequest('GET', chunk);
+  assert.equal(chunkResponse.status, 200);
+  assert.deepEqual(chunkResponse.body, chunks[0]);
+  assert.match(chunkResponse.headers['cache-control'], /immutable/);
+  assert.equal((await runtimeRequest('POST', chunk)).status, 405);
+  assert.equal((await runtimeRequest('GET', `${chunk}/../../index.js`)).status, 404);
   let styleType;
   let styleBody;
   await routes.get(host.STYLE_PATH).handler({ method: 'GET' }, {

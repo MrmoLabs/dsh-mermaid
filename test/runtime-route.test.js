@@ -44,7 +44,7 @@ test('host face exposes the bundled Mermaid runtime as a read-only route', async
   await route.handler({ method: 'GET' }, getResponse);
   assert.equal(getResponse.status, 200);
   assert.match(getResponse.headers['content-type'], /text\/javascript/);
-  assert.match(getResponse.headers['cache-control'], /immutable/);
+  assert.equal(getResponse.headers['cache-control'], 'no-cache');
   assert.ok(getResponse.body.length > 0);
 
   const headResponse = responseRecorder();
