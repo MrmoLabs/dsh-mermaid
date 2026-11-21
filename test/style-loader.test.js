@@ -65,3 +65,25 @@ test('deadline includes stalled body and abort/unmount ignores late success', as
   resolve(response(normalizeRenderConfig({ theme: 'forest' })));
   assert.equal((await loader.load()).style.theme, 'auto');
 });
+
+test('a recovery read is shared and only retries a temporary failure once', async () => {
+  let calls = 0;
+  const loader = createStyleLoader({ fetch: async () => ++calls === 1
+    ? response({}, { status: 503 })
+    : response(normalizeRenderConfig({ theme: 'forest' })) });
+  assert.equal((await loader.load()).warning, 'configReadFailed');
+  const retry = loader.retry();
+  assert.ok(retry);
+  assert.equal(loader.load(), retry);
+  assert.equal((await retry).style.theme, 'forest');
+  assert.equal(loader.retry(), null);
+  assert.equal(calls, 2);
+  loader.dispose();
+
+  for (const result of [() => response(undefined, { status: 404 }), () => response({})]) {
+    const permanent = createStyleLoader({ fetch: async () => result() });
+    await permanent.load();
+    assert.equal(permanent.retry(), null);
+    permanent.dispose();
+  }
+});

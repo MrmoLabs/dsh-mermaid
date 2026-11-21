@@ -19,7 +19,7 @@ test('measures visible SVGs and expands a clipped Journey viewBox', async () => 
     assert.equal(prepareSvgPreview(svg, 'journey'), false);
     svg.getBBox = () => ({ x: -12, y: 4, width: 125, height: 28 });
     assert.equal(prepareSvgPreview(svg, 'journey'), true);
-    assert.equal(svg.getAttribute('viewBox'), '-12 0 125 50');
+    assert.equal(svg.getAttribute('viewBox'), '-14 0 129 50');
     box.width = 0;
     svg.setAttribute('viewBox', '0 0 0 50');
     assert.equal(prepareSvgPreview(svg, 'journey'), false);

@@ -33,8 +33,10 @@ const cases = {
     first: `${fence}mermaid\nflowchart LR\nProgressiveFixture --> FirstPreview\n`,
     continuations: [['progressive-invalid', 'FirstPreview -->'], ['progressive-finish', `FinalFixture\n${fence}`]],
   },
+  busy: { first: `${fence}mermaid\nflowchart LR\nBusyFixture --> Start\n` },
   cancel: { first: `${fence}mermaidjs\nflowchart LR\nCancelFixture -->`, last: `ShouldNeverAppear\n${fence}` },
   limit: { first: `${fence}mmd\nflowchart LR\nLimitFixture -->`, stop: 'max_tokens' },
+  'draft-scope': { first: `${fence}mermaid\nflowchart LR\nDraftScopeFixture --> Original\n${fence}` },
   replay: {
     first: [
       `${fence}\nflowchart LR\nUntaggedFixture --> Done\n${fence}`,
@@ -61,7 +63,7 @@ const server = createServer(async (req, res) => {
     for await (const chunk of req) chunks.push(chunk);
     const input = JSON.parse(Buffer.concat(chunks).toString());
     const lastUserMessage = input.messages?.findLast(({ role }) => role === 'user');
-    const scenario = JSON.stringify(lastUserMessage || {}).match(/mermaid-acceptance-(pause|progressive|cancel|limit|replay)/)?.[1];
+    const scenario = JSON.stringify(lastUserMessage || {}).match(/mermaid-acceptance-(pause|progressive|busy|cancel|limit|replay|draft-scope)/)?.[1];
     modelScenarios.add(scenario);
     const sample = cases[scenario] || { first: 'Local fixture' };
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
@@ -70,6 +72,13 @@ const server = createServer(async (req, res) => {
     event('message_start', { message: { id: `msg_local_${scenario}`, type: 'message', role: 'assistant', model: input.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 120, output_tokens: 0 } } });
     event('content_block_start', { index: 0, content_block: { type: 'text', text: '' } });
     delta(sample.first);
+    if (scenario === 'busy') {
+      for (let index = 0; index < 18 && !res.destroyed; index++) {
+        await new Promise((done) => setTimeout(done, 55));
+        delta('Start --> BusyStep' + index + '\n');
+      }
+      delta(`${fence}\n\n${fence}mermaid\nflowchart LR\nNeighborFixture --> Done\n${fence}`);
+    }
     for (const [name, text] of sample.continuations || (sample.last ? [[scenario, sample.last]] : [])) {
       await new Promise((done) => {
         if (!gates.has(name)) gates.set(name, new Set());
@@ -112,11 +121,26 @@ try {
     const target = new URL(route.request().url());
     return target.origin === origin || ['data:', 'blob:'].includes(target.protocol) ? route.continue() : route.abort();
   });
+  await page.route(/\/dsh-mermaid\/runtime\/[^/]+\/\d{1,2}\/mermaid-runtime\.js$/, (route) => {
+    const url = JSON.stringify(route.request().url().replace(/\/\d{1,2}\/mermaid-runtime\.js$/, '/999/mermaid-runtime.js'));
+    return route.fulfill({ contentType: 'application/javascript', body: `
+      import { renderMermaid as render } from ${url};
+      export { default } from ${url};
+      export * from ${url};
+      export async function renderMermaid(id, source, signal, streaming) {
+        if (streaming && source.includes('BusyFixture')) {
+          window.busyDraws = (window.busyDraws || 0) + 1;
+          await new Promise((done) => setTimeout(done, 320));
+        }
+        return render(id, source, signal, streaming);
+      }
+    ` });
+  });
   await page.addInitScript(() => {
     const append = Element.prototype.append;
     Element.prototype.append = function (...nodes) {
       if (this.classList.contains('dsh-mmd-native-seat') &&
-          nodes.some((node) => node.querySelector?.('textarea')?.value.includes('CrashFixture'))) {
+          !window.injectedMermaidCardError && nodes.some((node) => node.querySelector?.('textarea')?.value.includes('CrashFixture'))) {
         window.injectedMermaidCardError = true;
         throw new Error('Synthetic failure in one Mermaid card');
       }
@@ -124,7 +148,7 @@ try {
     };
   });
   await page.goto(url);
-  const composer = page.locator('[contenteditable="true"]:visible,textarea:visible').last();
+  const composer = page.locator('[data-composer-seat] :is([contenteditable="true"],textarea):visible').last();
   for (const control of [/^(继续|Continue)$/, /^(开始使用|Get started)$/i]) {
     const button = page.getByRole('button', { name: control }).first();
     await page.waitForTimeout(300);
@@ -161,14 +185,29 @@ try {
   assert.equal(await liveCard.getAttribute('data-streaming'), '');
   assert.match(await liveSvg.textContent(), /FirstPreview/);
   assert.ok(await liveCard.getByRole('button', { name: /^(编辑|Edit)$/ }).isDisabled());
+  assert.ok(await liveCard.locator('.dsh-mmd-export-list button').first().isDisabled());
+  await liveCard.locator('.dsh-mmd-fullscreen').click();
+  const viewer = page.locator('.dsh-mmd-viewer');
+  await viewer.locator('.dsh-mmd-viewer-status').waitFor();
+  assert.match(await viewer.locator('svg').textContent(), /FirstPreview/);
   openGate('progressive-invalid');
   await page.waitForFunction(() => [...document.querySelectorAll('.dsh-mmd')].some((node) =>
     node.querySelector('svg')?.textContent.includes('ProgressiveFixture') && node.dataset.state === 'pending'));
   assert.match(await liveSvg.textContent(), /FirstPreview/);
   openGate('progressive-finish');
-  await rendered('FinalFixture');
+  await viewer.locator('svg').filter({ hasText: 'FinalFixture' }).waitFor();
+  await viewer.locator('.dsh-mmd-viewer-status').waitFor({ state: 'hidden' });
+  await page.keyboard.press('Escape');
   assert.equal(await liveCard.getAttribute('data-streaming'), null);
   assert.match(await liveSvg.textContent(), /FinalFixture/);
+
+  await prompt('busy');
+  await card('BusyFixture').locator('svg').waitFor();
+  assert.equal(await card('BusyFixture').getAttribute('data-streaming'), '');
+  await rendered('NeighborFixture');
+  assert.match(await card('BusyFixture').locator('svg').textContent(), /BusyStep17/);
+  const busyDraws = await page.evaluate(() => window.busyDraws);
+  assert.ok(busyDraws > 0 && busyDraws < 8);
 
   await prompt('cancel');
   await source('CancelFixture').waitFor();
@@ -205,6 +244,8 @@ try {
     await source('CrashFixture').waitFor();
     assert.ok(await page.evaluate(() => window.injectedMermaidCardError));
     assert.equal(await card('CrashFixture').count(), 0);
+    await page.getByRole('button', { name: /^(重试渲染|Retry rendering)$/ }).click();
+    await rendered('CrashFixture');
     await rendered('AdjacentFixture');
     await rendered('AliasFixture');
     for (const marker of ['UntaggedFixture', 'AdjacentFixture', 'AliasFixture']) {
@@ -216,7 +257,34 @@ try {
   await checkReplay();
   await page.reload();
   await checkReplay();
-  console.log(JSON.stringify({ host: 'DSH Desktop bundled host', pauseMs: 1250, progressive: true, retainedPreview: true, stopped: true, truncated: true, replayed: true, untagged: true, componentFallback: true }));
+
+  const newChat = page.getByRole('button', { name: /^(新建会话|New chat)$/i }).first();
+  async function openDraftScope() {
+    const previous = await page.locator('[data-conversation-session]:visible').first().getAttribute('data-conversation-session');
+    await newChat.click();
+    await page.waitForFunction((old) => [...document.querySelectorAll('[data-conversation-content]')].some((node) =>
+      node.getClientRects().length && node.getAttribute('data-conversation-session') !== old), previous);
+    await prompt('draft-scope');
+    const current = card('DraftScopeFixture');
+    await current.locator('svg').waitFor();
+    return current;
+  }
+  const scopeOf = (current) => current.evaluate((node) => ({
+    session: node.closest('[data-conversation-session]')?.dataset.conversationSession,
+    message: node.closest('[data-chat-flow-key]')?.dataset.chatFlowKey,
+  }));
+  const firstDraftCard = await openDraftScope();
+  const firstScope = await scopeOf(firstDraftCard);
+  await firstDraftCard.getByRole('button', { name: /^(编辑|Edit)$/ }).click();
+  await firstDraftCard.locator('textarea').fill('flowchart LR\nDraftScopeFixture --> SessionOneDraft');
+  await firstDraftCard.locator('svg').filter({ hasText: 'SessionOneDraft' }).waitFor();
+  const secondDraftCard = await openDraftScope();
+  const secondScope = await scopeOf(secondDraftCard);
+  assert.ok(firstScope.session && secondScope.session && firstScope.message && secondScope.message);
+  assert.notEqual(firstScope.session, secondScope.session);
+  assert.equal(await secondDraftCard.locator('textarea').inputValue(), 'flowchart LR\nDraftScopeFixture --> Original');
+  assert.match(await secondDraftCard.locator('svg').textContent(), /Original/);
+  console.log(JSON.stringify({ host: 'DSH Desktop bundled host', pauseMs: 1250, progressive: true, retainedPreview: true, stopped: true, truncated: true, replayed: true, untagged: true, componentFallback: true, cardRetry: true, streamingFullscreen: true, busyDraws, sessionDraftIsolation: true, sameMessageKey: firstScope.message === secondScope.message }));
 } finally {
   for (const scenario of gates.keys()) openGate(scenario);
   await browser?.close();

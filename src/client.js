@@ -6,17 +6,19 @@ import {
 } from './detection.js';
 import { resolveLocale, translate } from './i18n.js';
 import { CSS, FALLBACK_CSS } from './styles.js';
-import { ensureSvgAccessibility, hasSvgContent, localizeGeneratedSvgTitle, prepareSvgPreview, serializeSvg } from './svg.js';
+import { CONVERSATION_SESSION, conversationSession, createDiagramDrafts } from './diagram-drafts.js';
 import { DEFAULT_STYLE, effectiveStyle, styleKey } from './render-config.js';
 import { createStyleLoader } from './style-loader.js';
 import { FENCE_SELECTOR, registerNativeFences } from './fence-registration.js';
 import { registerNativeSettings } from './settings-registration.js';
+import { MERMAID_SETTINGS_SAVED } from './settings-event.js';
 import { runtimeUrl } from './runtime-url.js';
 
 const TAG_ID = 'dsh-mermaid/css';
 const STABLE_MS = 300;
 const RENDER_DEBOUNCE_MS = 500;
 const STREAM_PREVIEW_MS = 250;
+const LEGACY_SOURCE_WAIT_MS = 3_000;
 const MAX_SOURCE_CHARS = 50_000;
 const MAX_SOURCE_LINES = 2_000;
 const RUNTIME_LOAD_TIMEOUT_MS = 12_000;
@@ -30,6 +32,8 @@ let currentLocale = 'en';
 let styleTag = null;
 let styleLink = null;
 let mermaidRuntime = null;
+let svgTools;
+let importRuntime = (url) => import(url);
 let runtimePromise = null;
 let runtimeRetry = 0;
 let runtimeLoadFailure = null;
@@ -39,19 +43,32 @@ let tooltipPositionerFactory = null;
 let preserveViewPosition = null;
 let fullscreenViewer = null;
 let mount = null;
-let mountSequence = 0;
 const entries = new WeakMap();
 const wrappers = new Set();
 const renderQueue = [];
 
-function setMermaidRuntimeForTesting(runtime, positionerFactory, viewPositioner, viewerFactory) {
+function setMermaidRuntimeForTesting(runtime, positionerFactory, viewPositioner, viewerFactory, testSvgTools) {
   const previous = mermaidRuntime;
   const previousPromise = runtimePromise;
   const previousPositionerFactory = tooltipPositionerFactory;
   const previousViewPositioner = preserveViewPosition;
   const previousViewer = fullscreenViewer;
+  const previousImport = importRuntime;
+  const previousSvgTools = svgTools;
   mermaidRuntime = runtime;
+  svgTools = testSvgTools;
   runtimePromise = Promise.resolve(runtime);
+  importRuntime = async () => ({
+    ...testSvgTools,
+    default: runtime,
+    renderMermaid: runtime.render,
+    isMermaidSourceError: runtime.isSourceError,
+    createInlinePreview: runtime.createInlinePreview,
+    rasterizeSvg: runtime.rasterizeSvg,
+    createTooltipPositioner: positionerFactory,
+    preserveViewPosition: viewPositioner,
+    createFullscreenViewer: viewerFactory,
+  });
   tooltipPositionerFactory = positionerFactory;
   preserveViewPosition = viewPositioner;
   fullscreenViewer = viewerFactory?.({ t }) ?? null;
@@ -61,13 +78,26 @@ function setMermaidRuntimeForTesting(runtime, positionerFactory, viewPositioner,
     tooltipPositionerFactory = previousPositionerFactory;
     preserveViewPosition = previousViewPositioner;
     fullscreenViewer = previousViewer;
+    importRuntime = previousImport;
+    svgTools = previousSvgTools;
   };
 }
 
-function withDeadline(work, delay, timeoutError) {
+function withDeadline(work, delay, timeoutError, signal) {
   let timer;
-  const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(timeoutError), delay); });
-  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+  let abort;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(timeoutError), delay);
+    if (signal) {
+      abort = () => reject(signal.reason);
+      if (signal.aborted) abort();
+      else signal.addEventListener('abort', abort, { once: true });
+    }
+  });
+  return Promise.race([work, deadline]).finally(() => {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
+  });
 }
 
 function retireRuntime() {
@@ -76,7 +106,7 @@ function retireRuntime() {
 }
 
 function isModuleLoadError(error) {
-  return /failed to fetch|loading module|module script/i.test(error?.message);
+  return error?.name === 'TypeError' && /failed to fetch|loading (?:dynamically imported )?module|module script/i.test(error.message);
 }
 
 function loadMermaidRuntime() {
@@ -84,8 +114,9 @@ function loadMermaidRuntime() {
   if (!runtimePromise) {
     const url = runtimeUrl(runtimeRetry);
     const timeout = new Error('Mermaid runtime load timed out');
-    runtimePromise = withDeadline(import(url), RUNTIME_LOAD_TIMEOUT_MS, timeout)
+    runtimePromise = withDeadline(importRuntime(url), RUNTIME_LOAD_TIMEOUT_MS, timeout)
       .then((module) => {
+        svgTools = module;
         mermaidRuntime = {
           initialize: module.default.initialize,
           render: module.renderMermaid,
@@ -149,6 +180,10 @@ function readyPreview(entry) {
   return !entry.streaming && entry.lastRenderState === 'ok' && !entry.previewNeedsMeasurement ? matchingPreview(entry) : null;
 }
 
+function viewablePreview(entry) {
+  return entry.streaming ? entry.pane.querySelector('svg') : readyPreview(entry);
+}
+
 function canRestorePreview(entry) {
   return Boolean(matchingPreview(entry)
     && entry.failedTarget !== `${entry.lastRendered}\0${entry.lastRenderedStyleKey}`);
@@ -174,14 +209,24 @@ function updateConfigWarning(entry) {
   if (entry.configWarning.textContent !== message) entry.configWarning.textContent = message;
 }
 
-function loadStyle(owner) {
-  owner.promise ||= owner.loader.load().then((snapshot) => {
+function loadStyle(owner, request, recovery = false) {
+  owner.promise ||= (request || owner.loader.load()).then((snapshot) => {
     if (mount !== owner) return snapshot;
+    if (snapshot.warning === 'configReadFailed' && owner.snapshot) snapshot = { ...snapshot, style: owner.snapshot.style };
     owner.snapshot = snapshot;
     for (const wrapper of wrappers) {
       const entry = entries.get(wrapper._dshCode);
       if (entry) updateConfigWarning(entry);
     }
+    if (!recovery && snapshot.warning === 'configReadFailed') {
+      owner.configRetryTimer = setTimeout(() => {
+        const recovery = owner.loader.retry();
+        if (!recovery) return;
+        owner.promise = null;
+        void loadStyle(owner, recovery, true);
+      }, 2_000);
+    }
+    if (request) reRenderAll();
     return snapshot;
   });
   return owner.promise;
@@ -189,7 +234,7 @@ function loadStyle(owner) {
 
 function setActionAvailability(entry) {
   const ready = Boolean(readyPreview(entry));
-  entry.btnFullscreen.disabled = !ready;
+  entry.btnFullscreen.disabled = !viewablePreview(entry);
   entry.btnEdit.disabled = entry.streaming;
   entry.btnDownloadSvg.disabled = !ready;
   entry.btnDownloadPng.disabled = entry.btnDownloadPngBackground.disabled = !ready || entry.pngPending;
@@ -269,18 +314,19 @@ function localizeEntry(entry) {
   entry.btnReset.textContent = t('reset');
   entry.btnRetry.textContent = t('retryRender');
   entry.btnDiagnostics.textContent = t('copyDiagnostics');
+  entry.diagnosticsSource.lastChild.textContent = t('includeSource');
   entry.zoomOut.setAttribute('aria-label', t('zoomCardOut'));
   entry.zoomFit.textContent = t('fitCard');
   entry.zoomIn.setAttribute('aria-label', t('zoomCardIn'));
   entry.editor.setAttribute('aria-label', t('editorLabel'));
   entry.sourceLabel.textContent = t('sourceLabel');
   entry.previewLabel.textContent = t('previewLabel');
-  entry.draftHint.textContent = t('draftHint');
+  entry.draftHint.textContent = t(entry.draftKey ? 'draftHint' : 'draftHintLegacy');
   entry.detailsLabel.textContent = t('errorDetails');
   if (entry.statusKey) entry.statusEl.textContent = t(entry.statusKey, entry.statusParameters);
   updateNotice(entry);
   updateConfigWarning(entry);
-  localizeGeneratedSvgTitle(
+  svgTools?.localizeGeneratedSvgTitle(
     entry.pane.querySelector('svg'),
     t('diagramTitle', { type: entry.type }),
   );
@@ -344,9 +390,9 @@ function isMermaidCodeBlock(code) {
 
 function setView(entry, view) {
   entry.wrapper.dataset.view = view;
-  entry.btnDiagram.setAttribute('aria-pressed', String(view === 'diagram'));
-  entry.btnCode.setAttribute('aria-pressed', String(view === 'code'));
-  entry.btnEdit.setAttribute('aria-pressed', String(view === 'edit'));
+  for (const button of entry.views.children) {
+    button.setAttribute('aria-pressed', String(button.dataset.view === view));
+  }
   if (view === 'edit') {
     entry.preview.append(entry.feedback);
     if (!entry.draftDirty) syncDraftFromMessage(entry);
@@ -365,7 +411,7 @@ function measurePendingPreview(entry) {
   const svg = matchingPreview(entry);
   if (!svg?.getClientRects().length) return;
   entry.previewNeedsMeasurement = false;
-  if (prepareSvgPreview(svg, entry.renderedType)) {
+  if (svgTools.prepareSvgPreview(svg, entry.renderedType)) {
     entry.inlinePreview?.update(svg);
     setActionAvailability(entry);
   } else {
@@ -411,7 +457,7 @@ function setEntryRendered(entry) {
   setNotice(entry, entry.streaming ? 'streamingPreview' : null);
   setEntryStatus(entry, entry.streaming ? 'streamingPreview' : 'rendered');
   setActionAvailability(entry);
-  if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.setUpdating(false);
+  if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.setUpdating(entry.streaming);
 }
 
 function setEntryLoading(entry, key = 'rendering') {
@@ -434,7 +480,7 @@ function setEntryLoading(entry, key = 'rendering') {
   if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.setUpdating(true);
 }
 
-function setEntryError(entry, key, parameters, statusKey = key) {
+function setEntryError(entry, key, parameters) {
   if (entry.streaming) return setEntryLoading(entry, 'streamingPreview');
   const message = renderMessage(key, parameters);
   const hasSvg = Boolean(entry.pane.querySelector('svg'));
@@ -445,6 +491,7 @@ function setEntryError(entry, key, parameters, statusKey = key) {
   entry.failedTarget = `${currentRawSource(entry).trim()}\0${currentStyleKey()}`;
   if (entry.diagnosticTarget !== entry.failedTarget) {
     entry.diagnosticTarget = entry.failedTarget;
+    entry.diagnosticsSource.firstChild.checked = false;
     entry.diagnosticFailures.clear();
     entry.retryCount = 0;
   }
@@ -462,7 +509,7 @@ function setEntryError(entry, key, parameters, statusKey = key) {
     setPreviewStale(entry, key, parameters);
     setEntryStatus(
       entry,
-      statusKey === key && key === 'renderFailed' ? 'previewStaleStatus' : statusKey,
+      key === 'renderFailed' ? 'previewStaleStatus' : key,
       parameters,
     );
   } else {
@@ -470,7 +517,7 @@ function setEntryError(entry, key, parameters, statusKey = key) {
     entry.pane.textContent = message;
     entry.errorEl.textContent = message;
     setNotice(entry, null);
-    setEntryStatus(entry, statusKey, parameters);
+    setEntryStatus(entry, key === 'renderFailed' ? 'renderFailedStatus' : key, parameters);
     const unconfirmedSource = key === 'renderFailed' && entry.nativeSource === undefined && !entry.draftDirty;
     if (!unconfirmedSource && !RETRYABLE_RENDER_ERRORS.has(key) && entry.wrapper.dataset.view === 'diagram') setView(entry, 'edit');
   }
@@ -529,7 +576,7 @@ async function exportDiagram(entry, extension, matchTheme) {
   if (extension === 'svg') {
     const exported = svg.cloneNode(true);
     if (entry.renderedBackground) exported.style.backgroundColor = entry.renderedBackground;
-    downloadFile(entry, new Blob([serializeSvg(exported)], { type: 'image/svg+xml;charset=utf-8' }), source, extension, 'downloaded');
+    downloadFile(entry, new Blob([svgTools.serializeSvg(exported)], { type: 'image/svg+xml;charset=utf-8' }), source, extension, 'downloaded');
     return;
   }
   if (entry.pngPending) return;
@@ -549,6 +596,7 @@ async function exportDiagram(entry, extension, matchTheme) {
 }
 
 function copyWithFallback(text) {
+  const focused = document.activeElement;
   const area = document.createElement('textarea');
   area.value = text;
   area.setAttribute('readonly', '');
@@ -561,6 +609,7 @@ function copyWithFallback(text) {
     copied = Boolean(document.execCommand?.('copy'));
   } finally {
     area.remove();
+    focused?.focus({ preventScroll: true });
   }
   if (!copied) throw new Error('Clipboard is unavailable.');
 }
@@ -576,6 +625,7 @@ async function copyText(entry, text, status) {
 }
 
 function resetDraft(entry) {
+  entry.drafts.remove(entry.draftKey);
   entry.draft = messageSource(entry);
   entry.draftDirty = false;
   entry.composing = false;
@@ -596,25 +646,25 @@ function createButton(kind = '') {
 
 function createEntry(code, nativeSource, streaming = false) {
   const raw = nativeSource ?? code.textContent ?? '';
+  const drafts = mount.drafts;
+  const draftSession = conversationSession(code);
+  const draftKey = drafts.key(code, draftSession);
+  const draft = streaming ? undefined : drafts.get(draftKey, raw);
   const wrapper = document.createElement('div');
   wrapper.className = 'dsh-mmd';
-  wrapper.dataset.view = 'diagram';
 
   const bar = document.createElement('div');
   bar.className = 'dsh-mmd-bar';
   const views = document.createElement('div');
   views.className = 'dsh-mmd-views';
   views.setAttribute('role', 'group');
-  const btnDiagram = createButton('dsh-mmd-view-control');
-  btnDiagram.dataset.view = 'diagram';
-  btnDiagram.setAttribute('aria-pressed', 'true');
-  const btnCode = createButton('dsh-mmd-view-control');
-  btnCode.dataset.view = 'code';
-  btnCode.setAttribute('aria-pressed', 'false');
-  const btnEdit = createButton('dsh-mmd-view-control');
-  btnEdit.dataset.view = 'edit';
-  btnEdit.setAttribute('aria-pressed', 'false');
-  views.append(btnDiagram, btnCode, btnEdit);
+  const viewButtons = ['diagram', 'code', 'edit'].map((view) => {
+    const button = createButton('dsh-mmd-view-control');
+    button.dataset.view = view;
+    return button;
+  });
+  const [btnDiagram, btnCode, btnEdit] = viewButtons;
+  views.append(...viewButtons);
   const btnFullscreen = createButton('dsh-mmd-diagram-action dsh-mmd-fullscreen');
   const btnDownloadSvg = createButton('dsh-mmd-diagram-action');
   const btnDownloadPng = createButton();
@@ -636,7 +686,11 @@ function createEntry(code, nativeSource, streaming = false) {
   fileActions.append(btnCopy, exportButton, exportMenu);
   const errorActions = document.createElement('div');
   errorActions.className = 'dsh-mmd-error-actions';
-  errorActions.append(btnRetry, btnDiagnostics);
+  const diagnosticsSource = document.createElement('label');
+  const includeSource = document.createElement('input');
+  includeSource.type = 'checkbox';
+  diagnosticsSource.append(includeSource, document.createTextNode(''));
+  errorActions.append(btnRetry, btnDiagnostics, diagnosticsSource);
   const preview = document.createElement('div');
   preview.className = 'dsh-mmd-preview';
   const previewHeader = document.createElement('div');
@@ -666,7 +720,7 @@ function createEntry(code, nativeSource, streaming = false) {
   const codePane = document.createElement('pre');
   codePane.className = 'dsh-mmd-code';
   codePane.tabIndex = -1;
-  codePane.textContent = raw;
+  codePane.textContent = draft ?? raw;
   const editorPane = document.createElement('div');
   editorPane.className = 'dsh-mmd-editor';
   const editorHeader = document.createElement('div');
@@ -674,7 +728,7 @@ function createEntry(code, nativeSource, streaming = false) {
   const sourceLabel = document.createElement('span');
   const editor = document.createElement('textarea');
   editor.className = 'dsh-mmd-textarea';
-  editor.value = raw;
+  editor.value = draft ?? raw;
   editor.rows = 10;
   editor.spellcheck = false;
   editor.setAttribute('autocomplete', 'off');
@@ -717,12 +771,12 @@ function createEntry(code, nativeSource, streaming = false) {
     code, wrapper, bar, views, fileActions, preview, previewControls, pane, codePane, editor, body, feedback,
     sourceLabel, previewLabel, draftHint, btnReset, noticeEl, configWarning, errorEl, errorActions, statusEl,
     type: 'mermaid', btnDiagram, btnCode, btnEdit, errorDetails, detailsLabel, detailText,
-    btnFullscreen, btnDownloadSvg, btnDownloadPng, btnDownloadPngBackground, btnCopy, btnDownloadMmd, btnRetry, btnDiagnostics,
+    btnFullscreen, btnDownloadSvg, btnDownloadPng, btnDownloadPngBackground, btnCopy, btnDownloadMmd, btnRetry, btnDiagnostics, diagnosticsSource,
     exportButton, exportMenu, pngPending: false,
     zoomOut, zoomFit, zoomIn, inlinePreview: null,
-    nativeSource, streaming, draft: raw, draftDirty: false, composing: false,
+    nativeSource, streaming, drafts, draftSession, draftKey, draftOrigin: raw, draft: draft ?? raw, draftDirty: draft !== undefined, composing: false,
     lastRendered: '', lastRenderedStyleKey: '', lastRenderState: 'idle',
-    targetStyleKey: currentStyleKey(), mountId: mount.id,
+    targetStyleKey: currentStyleKey(),
     retryCount: 0, failureStage: '', diagnosticFailures: new Map(),
     stableTimer: null, renderTimer: null, renderGeneration: 0, viewAdjustment: 0,
     messageKey: 'rendering', messageParameters: {},
@@ -732,16 +786,17 @@ function createEntry(code, nativeSource, streaming = false) {
   };
   entries.set(code, entry);
   localizeEntry(entry);
-  setActionAvailability(entry);
+  setView(entry, entry.draftDirty ? 'edit' : 'diagram');
 
-  btnDiagram.addEventListener('click', () => setViewFromControl(entry, 'diagram'));
-  btnCode.addEventListener('click', () => setViewFromControl(entry, 'code'));
-  btnEdit.addEventListener('click', () => setViewFromControl(entry, 'edit'));
+  for (const button of viewButtons) {
+    button.addEventListener('click', () => setViewFromControl(entry, button.dataset.view));
+  }
   btnFullscreen.addEventListener('click', () => {
-    if (readyPreview(entry)) fullscreenViewer?.open(entry);
+    if (viewablePreview(entry)) fullscreenViewer?.open(entry);
   });
   btnCopy.addEventListener('click', () => { void copyText(entry, currentRawSource(entry), 'copied'); });
   exportMenu.addEventListener('toggle', (event) => {
+    exportButton.setAttribute('aria-expanded', String(event.newState === 'open'));
     if (event.newState !== 'open') return;
     if (!window.CSS.supports('position-area: block-end span-inline-start')) {
       const rect = exportButton.getBoundingClientRect();
@@ -750,7 +805,22 @@ function createEntry(code, nativeSource, streaming = false) {
       exportMenu.style.top = `${rect.bottom + gap + exportMenu.offsetHeight <= window.innerHeight
         ? rect.bottom + gap : Math.max(gap, rect.top - gap - exportMenu.offsetHeight)}px`;
     }
-    exportMenu.querySelector('button:enabled')?.focus({ preventScroll: true });
+    if (!exportMenu.contains(document.activeElement)) exportMenu.querySelector('button:enabled')?.focus({ preventScroll: true });
+  });
+  fileActions.addEventListener('keydown', (event) => {
+    if (!exportMenu.matches(':popover-open')) return;
+    const buttons = [...exportMenu.querySelectorAll('button:enabled')];
+    const index = buttons.indexOf(document.activeElement);
+    const next = { ArrowDown: (index + 1) % buttons.length, ArrowUp: (index + buttons.length - 1) % buttons.length, Home: 0, End: buttons.length - 1 };
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      exportMenu.hidePopover?.();
+      exportButton.focus({ preventScroll: true });
+    } else if (Object.hasOwn(next, event.key)) {
+      event.preventDefault();
+      buttons[next[event.key]]?.focus({ preventScroll: true });
+    }
   });
   for (const [button, format, matchTheme] of [
     [btnDownloadSvg, 'svg'], [btnDownloadPng, 'png'], [btnDownloadPngBackground, 'png', true], [btnDownloadMmd, 'mmd'],
@@ -784,14 +854,21 @@ function createEntry(code, nativeSource, streaming = false) {
       retryAttempts: entry.retryCount,
       failures: [...entry.diagnosticFailures.values()],
     };
+    if (includeSource.checked) {
+      report.source = currentRawSource(entry);
+      includeSource.checked = false;
+    }
     void copyText(entry, JSON.stringify(report, null, 2), 'diagnosticsCopied');
   });
-  editor.addEventListener('input', () => {
+  function updateDraft() {
+    if (!entry.draftDirty) entry.draftOrigin = messageSource(entry);
     entry.draft = editor.value;
     entry.draftDirty = true;
     entry.codePane.textContent = entry.draft;
+    if (!entry.composing) drafts.set(entry.draftKey, entry.draftOrigin, entry.draft);
     scheduleRender(entry);
-  });
+  }
+  editor.addEventListener('input', updateDraft);
   editor.addEventListener('compositionstart', () => {
     entry.composing = true;
     cancelScheduledRender(entry);
@@ -800,10 +877,7 @@ function createEntry(code, nativeSource, streaming = false) {
   });
   editor.addEventListener('compositionend', () => {
     entry.composing = false;
-    entry.draft = editor.value;
-    entry.draftDirty = true;
-    entry.codePane.textContent = entry.draft;
-    scheduleRender(entry);
+    updateDraft();
   });
 
   // Track pending cards too, so disposal also cancels their first-mount timer.
@@ -838,13 +912,15 @@ function updateNativeCard(seat, source, streaming = false) {
     return;
   }
   if (!mount || !seat.isConnected) return;
-  if (!entry) createEntry(seat, source, streaming);
-  else if (entry.nativeSource !== source || entry.streaming !== streaming) {
+  if (!entry || entry.draftSession !== conversationSession(seat)) {
+    if (entry) disposeEntry(entry);
+    createEntry(seat, source, streaming);
+  } else if (entry.nativeSource !== source || entry.streaming !== streaming) {
     entry.nativeSource = source;
     entry.streaming = streaming;
     entry.wrapper.toggleAttribute('data-streaming', streaming);
     entry.wrapper.inert = streaming && !entry.wrapper.hasAttribute('data-stream-preview');
-    if (entry.draftDirty) return;
+    if (entry.draftDirty) { setActionAvailability(entry); return; }
     if (streaming && entry.renderTimer) syncDraftFromMessage(entry);
     else scheduleRender(entry, streaming ? STREAM_PREVIEW_MS : 0);
   }
@@ -880,9 +956,12 @@ async function renderDiagram(entry) {
   const owner = mount;
   // The configuration request is shared; style is captured only after it settles.
   let capturedKey;
-  const isCurrent = () => mount === owner && owner?.id === entry.mountId
-    && generation === entry.renderGeneration && entry.wrapper.isConnected && entry.code.isConnected
-    && currentRawSource(entry).trim() === source && (!capturedKey || capturedKey === currentStyleKey());
+  const streaming = entry.streaming;
+  const isMounted = () => mount === owner && entry.wrapper.isConnected && entry.code.isConnected
+    && (!capturedKey || capturedKey === currentStyleKey());
+  const isCurrent = () => isMounted() && generation === entry.renderGeneration && currentRawSource(entry).trim() === source;
+  const canDisplay = () => isCurrent() || (streaming && entry.streaming && isMounted()
+    && entry.wrapper.dataset.view !== 'code' && currentRawSource(entry).trim().startsWith(source));
   entry.type = diagramType(source) || 'mermaid';
   if (!entry.draftDirty) entry.codePane.textContent = raw;
   setEntryLoading(entry);
@@ -923,11 +1002,11 @@ async function renderDiagram(entry) {
     initializeMermaid(runtime, style);
     entry.failureStage = 'render';
     const id = `dsh-mmd-${++uid}`;
-    controller = new AbortController();
+    controller = entry.renderController = new AbortController();
     const { svg, bindFunctions, diagramType: renderedType, background } = await withDeadline(
-      runtime.render(id, source, controller.signal), RUNTIME_RENDER_TIMEOUT_MS, renderTimeout,
+      runtime.render(id, source, controller.signal, streaming), RUNTIME_RENDER_TIMEOUT_MS, renderTimeout, controller.signal,
     );
-    if (!isCurrent()) return;
+    if (!canDisplay()) return;
     entry.failureStage = 'svg';
     const markup = document.createElement('template');
     markup.innerHTML = svg;
@@ -936,7 +1015,7 @@ async function renderDiagram(entry) {
       setEntryError(entry, 'missingSvg', {});
       return;
     }
-    if (!hasSvgContent(svgElement)) {
+    if (!svgTools.hasSvgContent(svgElement)) {
       setEntryEmpty(entry, 'emptyDiagram');
       return;
     }
@@ -947,13 +1026,14 @@ async function renderDiagram(entry) {
     let measured;
     try {
       entry.pane.replaceChildren(markup.content);
-      measured = prepareSvgPreview(svgElement, renderedType);
+      svgTools.applyDiagramPalette(svgElement, renderedType, background);
+      measured = svgTools.prepareSvgPreview(svgElement, renderedType);
       if (measured === false) {
         entry.pane.replaceChildren(...previousNodes);
         setEntryEmpty(entry, 'emptyDiagram');
         return;
       }
-      ensureSvgAccessibility(svgElement, t('diagramTitle', { type: entry.type }));
+      svgTools.ensureSvgAccessibility(svgElement, t('diagramTitle', { type: entry.type }));
       if (bindFunctions) {
         entry.failureStage = 'bind';
         try {
@@ -970,7 +1050,7 @@ async function renderDiagram(entry) {
       entry.pane.replaceChildren(...previousNodes);
       throw error;
     }
-    if (!isCurrent()) {
+    if (!canDisplay()) {
       entry.pane.replaceChildren(...previousNodes);
       return;
     }
@@ -990,17 +1070,20 @@ async function renderDiagram(entry) {
     setEntryRendered(entry);
     if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.update(entry, false);
   } catch (error) {
-    if (error === renderTimeout) {
+    if (controller?.signal.aborted || error === renderTimeout) {
+      // A cancelled render can leave Mermaid's internal queue occupied.
+      // Use an independent module graph for the next card.
       controller.abort(error);
       if (runtime === mermaidRuntime) retireRuntime();
-      if (isCurrent()) {
+      if (error === renderTimeout && isCurrent()) {
         entry.failureStage = 'render-timeout';
         setEntryError(entry, 'runtimeRenderTimeout', {});
       }
       return;
     }
     if (!isCurrent()) return;
-    if (isModuleLoadError(error) && runtime === mermaidRuntime) {
+    const sourceError = runtime?.isSourceError?.(error);
+    if (!sourceError && entry.failureStage === 'render' && isModuleLoadError(error) && runtime === mermaidRuntime) {
       // A failed chunk import is cached by URL. Retry from a fresh module graph.
       entry.failedRuntime = runtime;
       entry.failureStage = 'load-fetch';
@@ -1008,25 +1091,31 @@ async function renderDiagram(entry) {
       return;
     }
     const parameters = { detail: error?.message || String(error) };
-    if (runtime?.isSourceError?.(error)) {
-      if (error.incomplete && entry.nativeSource === undefined && !entry.draftDirty && entry.wrapper.dataset.view === 'diagram') {
-        setEntryLoading(entry, 'awaitingSource');
-        return;
-      }
-      if (error.line) parameters.line = error.line + (raw.slice(0, raw.length - raw.trimStart().length).match(/\n/g)?.length || 0);
+    if (sourceError) {
+      if (error.line) parameters.line = error.line + (raw.slice(0, raw.length - raw.trimStart().length).match(/\r\n|\r|\n/g)?.length || 0);
       parameters.reason = error.reason;
       entry.failureStage = 'source';
-      const hasSvg = Boolean(entry.pane.querySelector('svg'));
-      setEntryError(entry, 'renderFailed', parameters, hasSvg ? 'previewStaleStatus' : 'renderFailedStatus');
+      const reportError = () => setEntryError(entry, 'renderFailed', parameters);
+      if (error.incomplete && entry.nativeSource === undefined && !entry.draftDirty && entry.wrapper.dataset.view === 'diagram') {
+        setEntryLoading(entry, 'awaitingSource');
+        entry.sourceWaitTimer = setTimeout(() => {
+          entry.sourceWaitTimer = null;
+          if (isCurrent()) reportError();
+        }, LEGACY_SOURCE_WAIT_MS);
+      } else reportError();
     } else {
       setEntryError(entry, 'runtimeRenderFailed', parameters);
     }
+  } finally {
+    entry.renderController = null;
   }
 }
 
 function cancelScheduledRender(entry) {
   if (entry.renderTimer) clearTimeout(entry.renderTimer);
+  if (entry.sourceWaitTimer) clearTimeout(entry.sourceWaitTimer);
   entry.renderTimer = null;
+  entry.sourceWaitTimer = null;
 }
 
 function scheduleRender(entry, delay = RENDER_DEBOUNCE_MS, renderInCode = false) {
@@ -1076,6 +1165,7 @@ function waitForViewport(entry) {
 function enqueueRender(entry) {
   if (entry.renderQueued) return;
   if (!canRenderInViewport(entry)) return waitForViewport(entry);
+  svgTools?.supersedeRender?.(entry);
   entry.waitingForViewport = false;
   entry.renderQueued = true;
   const bounds = mount?.viewport && entry.wrapper.getBoundingClientRect();
@@ -1114,8 +1204,9 @@ function maybeEnhance(code) {
 
 function disposeEntry(entry) {
   if (entry.stableTimer) clearTimeout(entry.stableTimer);
-  if (entry.renderTimer) clearTimeout(entry.renderTimer);
+  cancelScheduledRender(entry);
   entry.renderGeneration += 1;
+  entry.renderController?.abort();
   mount?.viewport?.unobserve(entry.wrapper);
   entry.inlinePreview?.dispose();
   if (fullscreenViewer?.isOpenFor(entry)) fullscreenViewer.close();
@@ -1124,14 +1215,16 @@ function disposeEntry(entry) {
   entries.delete(entry.code);
 }
 
-function collectGarbage() {
+function collectGarbage(conversationChanged) {
   for (const wrapper of wrappers) {
     const code = wrapper._dshCode;
     const entry = code ? entries.get(code) : null;
-    if ((!wrapper.isConnected && !entry?.stableTimer) || !code?.isConnected) {
+    const rebind = conversationChanged && code?.isConnected && entry && entry.draftSession !== conversationSession(code);
+    if (rebind || (!wrapper.isConnected && !entry?.stableTimer) || !code?.isConnected) {
       if (entry) {
         disposeEntry(entry);
-        if (code.isConnected) maybeEnhance(code);
+        if (rebind && entry.nativeSource !== undefined) createEntry(code, entry.nativeSource, entry.streaming);
+        else if (code.isConnected) maybeEnhance(code);
       }
       else wrappers.delete(wrapper);
     }
@@ -1141,7 +1234,6 @@ function collectGarbage() {
 function handleMutations(mutations) {
   const codesToEnhance = new Set();
   const entriesToRender = new Set();
-
   for (const mutation of mutations) {
     if (mutation.type === 'childList') {
       for (const node of mutation.addedNodes) {
@@ -1160,7 +1252,7 @@ function handleMutations(mutations) {
 
   codesToEnhance.forEach(maybeEnhance);
   entriesToRender.forEach((entry) => scheduleRender(entry));
-  collectGarbage();
+  collectGarbage(mutations.some(({ type }) => type === 'attributes'));
 }
 
 function reRenderAll() {
@@ -1180,7 +1272,7 @@ function apply(ctx) {
   ctx.effect(() => {
     if (typeof document === 'undefined' || !document.body) return undefined;
     if (mount) throw new Error('dsh-mermaid: duplicate client mount');
-    const owner = { id: ++mountSequence, loader: createStyleLoader(), snapshot: null, promise: null, warningAnnounced: false, nativeFencesActive: false };
+    const owner = { drafts: createDiagramDrafts(), loader: createStyleLoader(), snapshot: null, promise: null, warningAnnounced: false, nativeFencesActive: false };
     if (document.documentElement.clientHeight && window.IntersectionObserver) {
       owner.viewport = new window.IntersectionObserver((changes) => {
         for (const change of changes) {
@@ -1198,7 +1290,7 @@ function apply(ctx) {
     tooltipPositioner = positions;
 
     const observer = new MutationObserver(handleMutations);
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributeFilter: [CONVERSATION_SESSION] });
     const themeObserver = new MutationObserver((mutations) => {
       if (mutations.some((mutation) => mutation.attributeName === 'data-ds-dark-theme')) reRenderAll();
     });
@@ -1212,23 +1304,30 @@ function apply(ctx) {
         fullscreenViewer?.close();
       }
     };
-    const handleWindowResize = () => {
-      if (fullscreenViewer?.isOpen()) fullscreenViewer.fit();
+    const refreshSettings = () => {
+      owner.settingsRefresh = (owner.settingsRefresh || Promise.resolve()).then(async () => {
+        await owner.promise;
+        if (mount !== owner) return;
+        clearTimeout(owner.configRetryTimer);
+        owner.promise = null;
+        await loadStyle(owner, owner.loader.refresh());
+      });
     };
     document.addEventListener('keydown', handleDocumentKeydown);
-    window.addEventListener('resize', handleWindowResize);
+    window.addEventListener(MERMAID_SETTINGS_SAVED, refreshSettings);
 
     document.querySelectorAll('pre code').forEach(maybeEnhance);
 
     return () => {
       if (mount === owner) mount = null;
+      clearTimeout(owner.configRetryTimer);
       owner.loader.dispose();
       owner.viewport?.disconnect();
       observer.disconnect();
       themeObserver.disconnect();
       localeObserver.disconnect();
       document.removeEventListener('keydown', handleDocumentKeydown);
-      window.removeEventListener('resize', handleWindowResize);
+      window.removeEventListener(MERMAID_SETTINGS_SAVED, refreshSettings);
       for (const wrapper of [...wrappers]) {
         const entry = entries.get(wrapper._dshCode);
         if (entry) disposeEntry(entry);
@@ -1250,7 +1349,7 @@ function apply(ctx) {
         if (entry?.nativeSource === undefined && entry?.code.closest(FENCE_SELECTOR)) disposeEntry(entry);
       }
     }
-  });
+  }, t);
 }
 
 const inject = [];

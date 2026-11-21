@@ -1,4 +1,5 @@
 import { createSettingsModel, createSettingsScope } from './settings-model.js';
+import { MERMAID_SETTINGS_SAVED } from './settings-event.js';
 
 const COPY = {
   en: {
@@ -14,8 +15,8 @@ const COPY = {
     invalidJson: 'Invalid JSON. Check double quotes, commas and closing brackets.', invalid: 'Invalid configuration',
     unavailable: 'Settings are unavailable on this host. You can still edit the profile configuration file.', readOnly: 'This connection cannot save profile settings.',
     save: 'Save', saving: 'Saving…', saveFailed: 'Save failed. Your draft is retained; check permissions or configuration conflicts.',
-    clean: 'Saved settings', dirty: 'Unsaved changes', saved: 'Saved. Refresh the page to apply.', failed: 'Save failed; draft retained.',
-    applyHint: 'Settings belong to the current DSH profile. Copy or download conversation diagram drafts before refreshing; refreshing loses those drafts. Per-diagram frontmatter can override these defaults.',
+    clean: 'Saved settings', dirty: 'Unsaved changes', saved: 'Saved. Open diagrams update automatically.', failed: 'Save failed; draft retained.',
+    applyHint: 'Settings belong to the current DSH profile. Per-diagram frontmatter can override these defaults. ZenUML follows the palette brightness and has its own colors.',
     conflict: 'The host configuration changed while you were editing. Your draft is retained. Discard changes to load the latest values before editing again.',
     storedInvalid: 'The saved configuration is invalid. Its fields and variables have been retained; fix the errors and save, or explicitly restore defaults.',
     original: 'Original saved configuration (read-only)', invalidSaved: 'Invalid saved value — select a replacement', profileRepair: 'This structure cannot be repaired with the regular fields. Keep a copy of the original JSON and fix the profile file, or explicitly restore defaults.',
@@ -38,8 +39,8 @@ const COPY = {
     invalidJson: 'JSON 格式有误，请检查双引号、逗号和括号是否闭合。', invalid: '配置无效',
     unavailable: '当前宿主暂不支持此设置表单，仍可编辑 profile 配置文件。', readOnly: '当前连接没有保存 profile 设置的权限。',
     save: '保存', saving: '正在保存…', saveFailed: '保存失败，草稿已保留；请检查权限或配置冲突。',
-    clean: '已保存的设置', dirty: '有未保存的更改', saved: '已保存，刷新页面后生效。', failed: '保存失败，草稿已保留。',
-    applyHint: '设置保存在当前 DSH profile 中。刷新前请先复制或下载会话中需要保留的图表草稿，刷新会丢失草稿。单图 frontmatter 可以覆盖这里的默认设置。',
+    clean: '已保存的设置', dirty: '有未保存的更改', saved: '已保存，已打开的图表会自动更新。', failed: '保存失败，草稿已保留。',
+    applyHint: '设置保存在当前 DSH profile 中，单图 frontmatter 可以覆盖默认设置。ZenUML 随配色明暗切换，图内使用独立颜色。',
     conflict: '编辑期间宿主配置发生了变化，草稿已保留。请先放弃更改以读取最新配置，再重新编辑。',
     storedInvalid: '已保存的配置无效，原有字段与变量已保留；请修复错误后保存，或明确恢复默认。',
     original: '已保存的原始配置（只读）', invalidSaved: '已保存的值无效，请重新选择', profileRepair: '此结构无法通过常规字段修复。请保留原始 JSON 并修复 profile 文件，或明确恢复默认。',
@@ -90,7 +91,9 @@ function createSettingsPage({ React, primitives, model, locale }) {
           h(Input, { id: `${id}-${group}-${key}`, value: typeof variables?.[key] === 'string' ? variables[key] : '', placeholder: inherited(key) !== undefined ? t('inheritedCommon') + inherited(key) : t('inherited'), disabled: fieldsDisabled || !active || !variables, onChange: (event) => model.editVariable(group, key, event.target.value) })));
     };
     return h('section', { className: 'dsh-mmd-settings', 'aria-label': t('title') }, h('style', null, CSS + PICKER_CSS),
-      h(SettingsForm, { labels: { unavailable: t('unavailable'), readOnly: t('readOnly'), saveFailed: t('saveFailed'), save: t('save'), saving: t('saving') }, state: { ...state, invalid: state.invalid || state.conflict }, onSave: () => { void model.save(); }, onDiscard: () => {} },
+      h(SettingsForm, { labels: { unavailable: t('unavailable'), readOnly: t('readOnly'), saveFailed: t('saveFailed'), save: t('save'), saving: t('saving') }, state: { ...state, invalid: state.invalid || state.conflict }, onSave: async () => {
+        if (await model.save()) window.dispatchEvent(new Event(MERMAID_SETTINGS_SAVED));
+      }, onDiscard: () => {} },
         h('h3', null, t('title')),
         h('div', { className: 'dsh-mmd-settings-grid' }, selector('theme', ['auto', 'default', 'dark', 'neutral', 'forest', 'base']), selector('look', ['classic', 'handDrawn'])),
         h('p', null, t('lookHint')),

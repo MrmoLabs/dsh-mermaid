@@ -44,6 +44,18 @@ test('source classification is independent from the DOM block guard', () => {
   assert.equal(hasMermaidLanguage([]), false);
 });
 
+test('recognizes additional diagram headers without treating ambiguous info as a diagram', () => {
+  for (const type of ['C4Context', 'C4Container', 'C4Component', 'C4Dynamic', 'C4Deployment',
+    'block-beta', 'packet-beta', 'kanban', 'radar-beta', 'treemap-beta', 'swimlane-beta', 'eventmodeling',
+    'treeView-beta', 'ishikawa-beta', 'venn-beta', 'wardley-beta', 'cynefin-beta',
+    'railroad-beta', 'railroad-ebnf-beta', 'railroad-abnf-beta', 'railroad-peg-beta']) {
+    assert.equal(isMermaidSource('%% note\n' + type + '\n  content'), true, type);
+  }
+  assert.equal(isMermaidSource('info'), false);
+  assert.equal(isMermaidSource('const info = getInfo()'), false);
+  assert.equal(isMermaidSource('treemap-beta-example'), false);
+});
+
 test('scans closed indented configuration and multiline directives across line endings', () => {
   for (const newline of ['\n', '\r\n', '\r']) {
     const prefix = ['\uFEFF  ', '  ---', '  config:', '    themeVariables:', '      title: flowchart', '  ---', '%% comment', '  %%{init: {', '    "theme": "dark"', '  }}%%', '%% more', ''].join(newline);

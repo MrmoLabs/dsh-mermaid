@@ -85,14 +85,17 @@ try {
   await page.route(`**${runtimeUrl()}`, (route) => route.fulfill({
     contentType: 'text/javascript',
     body: `import { renderMermaid as render } from '${runtimeUrl(999)}';
-      export { default, isMermaidSourceError, createInlinePreview, createFullscreenViewer, preserveViewPosition, createTooltipPositioner } from '${runtimeUrl(999)}';
-      export function renderMermaid(id, source, signal) {
+      export { default } from '${runtimeUrl(999)}';
+      export * from '${runtimeUrl(999)}';
+      export function renderMermaid(id, source, signal, streaming) {
         window.renders = (window.renders || 0) + 1;
         if (source.includes('[Item 23]')) window.probeRenders = (window.probeRenders || 0) + 1;
-        return render(id, source, signal);
+        return render(id, source, signal, streaming);
       }`,
   }));
   await page.goto(`${origin}/conversation`);
+  const heapSession = await page.context().newCDPSession(page);
+  const initialHeap = (await heapSession.send('Runtime.getHeapUsage')).usedSize;
   const cards = page.locator('.dsh-mmd');
   await cards.first().locator('svg').waitFor();
   await page.waitForFunction(() => document.querySelectorAll('.dsh-mmd[data-state="pending"]').length >= 32);
@@ -112,7 +115,79 @@ try {
   const reRendersFor20ViewChanges = (await page.evaluate(() => window.probeRenders)) - before;
   assert.equal(reRendersFor20ViewChanges, 0);
   assert.ok(initial <= 8);
-  report.conversation = { total: 40, initiallyRendered: initial, reRendersFor20ViewChanges, averageSwitchMs: round(averageSwitchMs) };
+  const remountStarted = Date.now();
+  const previous = await card.locator('svg').elementHandle();
+  await card.evaluate((node) => {
+    const source = node.nextElementSibling;
+    source.replaceWith(source.cloneNode(true));
+  });
+  await page.waitForFunction((svg) => !svg.isConnected, previous);
+  await previous.dispose();
+  await page.locator('.dsh-mmd svg', { hasText: 'Item 23' }).waitFor();
+  const sameBlockRemountMs = Date.now() - remountStarted;
+  assert.equal(await page.evaluate(() => window.probeRenders), before + 1);
+  await heapSession.send('HeapProfiler.collectGarbage');
+  const afterHeap = (await heapSession.send('Runtime.getHeapUsage')).usedSize;
+  report.conversation = {
+    total: 40, initiallyRendered: initial, reRendersFor20ViewChanges, sameBlockRemountMs,
+    averageSwitchMs: round(averageSwitchMs), initialHeapBytes: initialHeap, retainedHeapBytes: afterHeap,
+  };
+  await page.close();
+
+  const budgetPage = await browser.newPage();
+  await budgetPage.goto(origin);
+  const layoutWarnings = [];
+  budgetPage.on('console', (message) => {
+    if (/layout algorithm.*(?:not registered|fallback)/i.test(message.text())) layoutWarnings.push(message.text());
+  });
+  report.budget = await budgetPage.evaluate(async (url) => {
+    const runtime = await import(url);
+    runtime.default.initialize({ securityLevel: 'strict', suppressErrorRendering: true, maxEdges: 2000, logLevel: 'warn' });
+    const measurements = [];
+    const watcher = new PerformanceObserver((list) => measurements.push(...list.getEntries().map((entry) => entry.duration)));
+    watcher.observe({ type: 'longtask' });
+    const samples = {
+      branchingFlowchart: 'flowchart LR\n' + Array.from({ length: 150 }, (_, index) => 'N' + index + '-->N' + (index + 1) + ' & N' + (index + 2)).join('\n'),
+      treemap: 'treemap-beta\n"Section"\n' + Array.from({ length: 100 }, (_, index) => '    "Item ' + index + '": ' + (index + 1)).join('\n'),
+      gantt: 'gantt\ndateFormat YYYY-MM-DD\nsection Plan\n' + Array.from({ length: 80 }, (_, index) => 'Task ' + index + ' :task' + index + ', 2026-11-01, 4d').join('\n'),
+      externalLayoutRequest: '---\nconfig:\n  layout: elk\n---\nflowchart LR\nA-->B',
+    };
+    const durations = {};
+    for (const [name, source] of Object.entries(samples)) {
+      const started = performance.now();
+      const output = await runtime.renderMermaid(name, source);
+      if (!output.svg.includes('<svg')) throw new Error('Empty result for ' + name);
+      durations[name] = Math.round(performance.now() - started);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    watcher.disconnect();
+    return { durationsMs: durations, longestTaskMs: Math.max(0, ...measurements) };
+  }, runtimeUrl());
+  report.budget.externalLayoutFallsBack = layoutWarnings.some((warning) => /elk.*dagre/i.test(warning));
+  await budgetPage.close();
+
+  const slowPage = await browser.newPage();
+  const slowSession = await slowPage.context().newCDPSession(slowPage);
+  await slowSession.send('Network.enable');
+  await slowSession.send('Network.emulateNetworkConditions', {
+    offline: false, latency: 75, downloadThroughput: 256 * 1024, uploadThroughput: 128 * 1024,
+  });
+  await slowPage.goto(origin);
+  report.slowConnection = await slowPage.evaluate(async (url) => {
+    const started = performance.now();
+    const runtime = await import(url);
+    runtime.default.initialize({ securityLevel: 'strict', suppressErrorRendering: true });
+    const source = 'flowchart LR\nA-->B';
+    await runtime.renderMermaid('cold', source);
+    const cold = performance.now();
+    const entries = performance.getEntriesByType('resource').filter((entry) => entry.name.endsWith('.js'));
+    await runtime.renderMermaid('warm', source);
+    return {
+      coldMs: Math.round(cold - started), warmMs: Math.round(performance.now() - cold),
+      requests: entries.length, bytes: entries.reduce((sum, entry) => sum + entry.decodedBodySize, 0),
+    };
+  }, runtimeUrl());
+  await slowPage.close();
   console.log(JSON.stringify(report, null, 2));
 } finally {
   await browser?.close();

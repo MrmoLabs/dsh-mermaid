@@ -4,6 +4,8 @@ import { preserveViewPosition } from '../src/scroll.js';
 import { createFullscreenViewer } from '../src/viewer.js';
 import { createInlinePreview } from '../src/inline-preview.js';
 import { normalizeRenderConfig } from '../src/render-config.js';
+import * as svgTools from '../src/svg.js';
+import { supersedeRender } from '../src/render-scheduling.js';
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -98,7 +100,7 @@ async function createClientHarness({
         activeRenders -= 1;
       }
     },
-  }, createTooltipPositioner, preserveViewPosition, createFullscreenViewer) : null;
+  }, createTooltipPositioner, preserveViewPosition, createFullscreenViewer, { ...svgTools, supersedeRender }) : null;
 
   function addCodeBlock(source = '', className = 'language-mermaid') {
     const pre = document.createElement('pre');

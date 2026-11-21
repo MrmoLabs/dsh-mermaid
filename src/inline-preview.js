@@ -24,13 +24,16 @@ function createInlinePreview(pane, onZoom, onResize) {
   function zoom(nextScale, anchorX = pane.clientWidth / 2, anchorY = pane.clientHeight / 2, fit = false) {
     const svg = pane.querySelector('svg');
     if (!svg) return;
-    const centerX = (pane.scrollLeft + anchorX) / (pane.scrollWidth || 1);
-    const centerY = (pane.scrollTop + anchorY) / (pane.scrollHeight || 1);
+    const before = svg.getBoundingClientRect();
+    const viewport = pane.getBoundingClientRect();
+    const x = (viewport.left + anchorX - before.left) / (before.width || 1);
+    const y = (viewport.top + anchorY - before.top) / (before.height || 1);
     scale = Math.max(0.5, Math.min(8, nextScale));
     if (fit) pane.setAttribute('data-fit', '');
     update(svg);
-    pane.scrollLeft = fit ? 0 : centerX * pane.scrollWidth - anchorX;
-    pane.scrollTop = fit ? 0 : centerY * pane.scrollHeight - anchorY;
+    const after = svg.getBoundingClientRect();
+    pane.scrollLeft = fit ? 0 : pane.scrollLeft + after.left + x * after.width - viewport.left - anchorX;
+    pane.scrollTop = fit ? 0 : pane.scrollTop + after.top + y * after.height - viewport.top - anchorY;
     onZoom?.();
   }
 

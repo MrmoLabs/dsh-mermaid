@@ -21,56 +21,83 @@ function validateProtocol(value) {
   return deepFreeze({ ...normalized, status: value.status, diagnostics, warning: value.status === 'fallback' ? 'configInvalid' : null });
 }
 
-// One loader per mount, one lazy request; errors settle to a permanent snapshot.
+// Share one request per mount. A transport failure permits one recovery read.
 function createStyleLoader({ fetch: fetcher = globalThis.fetch, timeoutMs = 3000 } = {}) {
-  const controller = new AbortController();
+  let controller;
   let promise;
   let disposed = false;
   let rejectAbort;
+  let retryable = false;
+  let retried = false;
   const fallback = deepFreeze({ ...normalizeRenderConfig(), status: 'fallback', warning: 'configReadFailed' });
   function load() {
     if (promise) return promise;
     if (disposed) return Promise.resolve(fallback);
+    const attempt = controller = new AbortController();
     promise = (async () => {
       let reader;
       let timer;
+      let recoverable = true;
       const stop = new Promise((_, reject) => {
         rejectAbort = reject;
-        timer = setTimeout(() => { controller.abort(); reject(new Error('timeout')); }, timeoutMs);
+        timer = setTimeout(() => { attempt.abort(); reject(new Error('timeout')); }, timeoutMs);
       });
       const request = (async () => {
-        const response = await fetcher(CONFIG_URL, { signal: controller.signal, cache: 'no-store', credentials: 'same-origin' });
-        if (controller.signal.aborted) throw new Error('aborted');
+        const response = await fetcher(CONFIG_URL, { signal: attempt.signal, cache: 'no-store', credentials: 'same-origin' });
+        attempt.signal.throwIfAborted();
+        recoverable = response.status === 429 || response.status >= 500;
         if (!response.ok || !/application\/json\b/i.test(response.headers.get('content-type') || '')) throw new Error('http');
         if (!response.body?.getReader) throw new Error('stream');
+        recoverable = true;
         reader = response.body.getReader();
         const chunks = [];
         let bytes = 0;
         while (true) {
           const { done, value } = await reader.read();
-          if (controller.signal.aborted) throw new Error('aborted');
+          attempt.signal.throwIfAborted();
           if (done) break;
           bytes += value.byteLength;
-          if (bytes > MAX_RESPONSE_BYTES) throw new Error('size');
+          if (bytes > MAX_RESPONSE_BYTES) {
+            recoverable = false;
+            throw new Error('size');
+          }
           chunks.push(value);
         }
         const body = new Uint8Array(bytes);
         let offset = 0;
         for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+        recoverable = false;
         return validateProtocol(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body)));
       })();
       try { return await Promise.race([request, stop]); }
-      catch { controller.abort(); void reader?.cancel().catch(() => {}); return fallback; }
+      catch {
+        retryable = recoverable && !disposed && !retried;
+        attempt.abort();
+        void reader?.cancel().catch(() => {});
+        return fallback;
+      }
       finally { clearTimeout(timer); rejectAbort = null; }
     })();
     return promise;
   }
   function dispose() {
     disposed = true;
-    controller.abort();
+    controller?.abort();
     rejectAbort?.(new Error('disposed'));
   }
-  return { load, dispose };
+  function retry() {
+    if (!retryable || disposed) return null;
+    retryable = false;
+    retried = true;
+    promise = null;
+    return load();
+  }
+  function refresh() {
+    retryable = retried = false;
+    promise = null;
+    return load();
+  }
+  return { load, retry, refresh, dispose };
 }
 
 export { CONFIG_URL, MAX_RESPONSE_BYTES, createStyleLoader, validateProtocol };

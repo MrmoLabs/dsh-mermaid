@@ -62,6 +62,7 @@ test('view controls work before the first runtime import', async () => {
 test('retries a failed runtime import without changing source or view', async () => {
   const loads = [];
   const moduleSource = `export default { initialize() {} };
+    export * from ${JSON.stringify(new URL('../src/svg.js', import.meta.url).href)};
     export async function renderMermaid(id, source) {
       return { svg: '<svg><text>' + source + '</text></svg>' };
     }`;

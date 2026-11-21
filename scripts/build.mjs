@@ -50,7 +50,11 @@ await build({
 const settingsRevision = createHash('sha256').update(await readFile('lib/settings-runtime.js')).digest('hex').slice(0, 12);
 
 await build({
-  entryPoints: ['src/client.js'],
+  stdin: {
+    contents: "export { apply, inject } from './src/client.js';",
+    resolveDir: process.cwd(),
+    sourcefile: 'client-entry.js',
+  },
   outfile: 'lib/client.js',
   bundle: true,
   minify: true,

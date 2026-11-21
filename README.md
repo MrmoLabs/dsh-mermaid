@@ -60,7 +60,7 @@ On older hosts, an incomplete code block can stay in **Diagram** while more sour
 ### 3. Edit the source
 
 - **Edit** opens a source panel alongside the diagram preview. On narrow cards the preview moves below the source. Changes re-render after a short debounce, and rendering messages appear in the preview panel.
-- The draft is local to this page and is never written back to the sent message. Refreshing the page or rebuilding the card discards it.
+- Drafts are local to the page. On DSH hosts with conversation and message identifiers, matching drafts survive card rebuilding and conversation navigation. Copy or download a draft before refreshing.
 - While a new source is rendering, or when it has a syntax error, the last successful diagram stays visible with a notice. **Copy source** and **.mmd** always use the raw draft, including comments and whitespace. **Restore original** in the source panel restores the message source.
 - **Edit** remains available on errors. With a host-confirmed final code block, an initial syntax error opens **Edit** automatically.
 - Syntax errors show a line number when Mermaid reports one. Expand **Error details** for the full parser message.
@@ -73,8 +73,9 @@ On older hosts, an incomplete code block can stay in **Diagram** while more sour
 - **Fullscreen**, above the preview in **Diagram** and **Edit**, opens a viewer with mouse-wheel zoom, dragging, 100% reset, and fit-to-window controls. Press `Esc` to close it.
 - Pinch to zoom and double-tap to toggle zoom on touchscreens, in the card and fullscreen.
 - Open **Export** in the card header to download the entire diagram as SVG or PNG, or the current source as `.mmd`. The preview, fullscreen view, SVG and background PNG use the diagram palette's white or black background. Transparent PNG is also available. PNG uses up to 3× the SVG dimensions, subject to an 8,192-pixel edge and 16-megapixel area limit. File names include a short suffix derived from the source.
-- Fullscreen, SVG, and PNG require an up-to-date preview after the response has finished generating. The `.mmd` download remains available while the preview is rendering or the source contains an error.
-- **Retry rendering** reruns the operation on the current source and uses a fresh module URL after a loading failure. A stalled asynchronous render times out after 15 seconds and the next queued diagram uses a fresh renderer instance. **Copy diagnostics** groups repeated failures for the current source and theme and includes the diagram type, Mermaid version, failure stage, available line number, and retry count.
+- Fullscreen can show the last successful preview during generation. SVG and PNG require an up-to-date preview after the response finishes. The `.mmd` download remains available on rendering and source errors.
+- For offline images, use resources Mermaid can embed. SVG external references still depend on their original locations. PNG encoding supports self-contained resources and retries a large canvas once at reduced resolution if the browser rejects its capacity.
+- **Retry rendering** reruns the operation on the current source and uses a fresh module URL after a loading failure. Removing a stalled card or reaching the asynchronous render deadline releases the queue to a fresh renderer. **Copy diagnostics** includes diagram type, Mermaid version, failure stage, available line number, and retry count. Select **Include source** to attach the current source to that copy.
 
 ![The Export menu with SVG, transparent PNG, PNG with the theme background, and Mermaid source downloads](docs/images/export-en.jpg)
 
@@ -103,7 +104,7 @@ Open **Plugins → Installed plugins → dsh-mermaid** in the sidebar. The **Ren
 - **Save** validates all groups, submits one revisioned mutation through the host settings service, and confirms accepted readback. Failed or conflicting writes retain the draft; **Discard changes** loads current host values.
 - Invalid saved settings retain their original fields and variable trees, with a read-only copy of the original JSON. Repairing one field does not erase the remaining palette. Unsupported structures block Save until repaired in the profile or explicitly replaced with defaults.
 - Returning to saved values or changing only JSON formatting does not report unsaved changes. Invalid JSON drafts remain protected on refresh/close.
-- Settings drafts survive navigation between the plugin page and conversations. Unsaved settings trigger a browser prompt before refresh/close. Saved settings apply to diagrams after a refresh: **copy or download conversation diagram drafts first**.
+- Settings drafts survive navigation between the plugin page and conversations. Unsaved settings trigger a browser prompt before refresh or close. Confirmed saves update diagrams in the current page while keeping their drafts and views. ZenUML follows the palette brightness and uses its own diagram colors.
 
 The editor loads on demand and uses host form controls, buttons and typography. It adds no private write endpoint or second storage layer. Hosts without the native form services can still use the profile-file workflow below.
 

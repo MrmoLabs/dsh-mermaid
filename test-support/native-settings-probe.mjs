@@ -122,7 +122,7 @@ try {
     assert.equal(await editor.getByLabel('配色主题', { exact: true }).inputValue(), 'base');
     assert.equal(await editor.getByLabel('绘图风格', { exact: true }).inputValue(), 'handDrawn');
     await editor.getByRole('button', { name: '保存', exact: true }).click();
-    await editor.getByText('已保存，刷新页面后生效。', { exact: true }).waitFor();
+    await editor.getByText('已保存，已打开的图表会自动更新。', { exact: true }).waitFor();
     const saved = await (await fetch(`${base}/dsh-mermaid/config.json`)).json();
     assert.equal(saved.style.theme, 'base');
     assert.equal(saved.style.look, 'handDrawn');
@@ -177,7 +177,7 @@ try {
     assert.equal(await editor.getByLabel('配色主题', { exact: true }).inputValue(), '__invalid__');
     await editor.getByLabel('配色主题', { exact: true }).selectOption('base');
     await editor.getByRole('button', { name: '保存', exact: true }).click();
-    await editor.getByText('已保存，刷新页面后生效。', { exact: true }).waitFor();
+    await editor.getByText('已保存，已打开的图表会自动更新。', { exact: true }).waitFor();
     const repaired = await (await fetch(`${base}/dsh-mermaid/config.json`)).json();
     assert.deepEqual(repaired.style.themeVariables, saved.style.themeVariables, 'repairing a theme typo must preserve every saved variable');
     await writeFile(join(profile, 'cordis.patch.yml'), '- id: ui-mermaid\n  config: null\n', 'utf8');
@@ -187,7 +187,7 @@ try {
     assert.equal(await editor.getByRole('button', { name: '保存', exact: true }).isDisabled(), true);
     await editor.getByRole('button', { name: '恢复默认', exact: true }).click();
     await editor.getByRole('button', { name: '保存', exact: true }).click();
-    await editor.getByText('已保存，刷新页面后生效。', { exact: true }).waitFor();
+    await editor.getByText('已保存，已打开的图表会自动更新。', { exact: true }).waitFor();
     await writeFile(join(profile, 'cordis.patch.yml'), '[]\n', 'utf8');
     await page.reload();
     await openSettings();

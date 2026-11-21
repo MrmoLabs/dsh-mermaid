@@ -7,6 +7,18 @@ function createFullscreenViewer({ t }) {
 
   function updateTransform() {
     if (!viewer) return;
+    viewer.zoomAnimation?.cancel();
+    viewer.zoomAnimation = null;
+    const { viewport, dimensions, scale } = viewer;
+    if (dimensions) {
+      const bound = (pan, diagram, available) => {
+        if (!available) return pan;
+        const overflow = Math.max(0, (diagram * scale - available) / 2);
+        return Math.max(-overflow, Math.min(overflow, pan));
+      };
+      viewer.panX = bound(viewer.panX, dimensions.width, viewport.clientWidth);
+      viewer.panY = bound(viewer.panY, dimensions.height, viewport.clientHeight);
+    }
     viewer.stage.style.transform = `translate(-50%,-50%) translate(${viewer.panX}px,${viewer.panY}px) scale(${viewer.scale})`;
     viewer.zoomLabel.textContent = `${Math.round(viewer.scale * 100)}%`;
   }
@@ -21,21 +33,40 @@ function createFullscreenViewer({ t }) {
       viewer.panY = anchor.y - ((anchor.y - viewer.panY) * ratio);
     }
     viewer.scale = nextScale;
+    viewer.fitted = false;
+    updateTransform();
+  }
+
+  function resize() {
+    if (!viewer || viewer.overlay.hidden || !viewer.dimensions) return;
+    const { dimensions } = viewer;
+    const width = viewer.viewport.clientWidth || 1200;
+    const height = viewer.viewport.clientHeight || 800;
+    viewer.fitScale = Math.min(4, Math.max(0.1, Math.min((width - 48) / dimensions.width, (height - 48) / dimensions.height)));
+    if (viewer.fitted) {
+      viewer.scale = viewer.fitScale;
+      viewer.panX = viewer.panY = 0;
+    }
     updateTransform();
   }
 
   function fit() {
     if (!viewer) return;
-    const svg = viewer.stage.querySelector('svg');
-    if (!svg) return;
-    const dimensions = svgDimensions(svg);
-    const width = viewer.viewport.clientWidth || 1200;
-    const height = viewer.viewport.clientHeight || 800;
-    viewer.fitScale = Math.min(4, Math.max(0.1, Math.min((width - 48) / dimensions.width, (height - 48) / dimensions.height)));
-    viewer.scale = viewer.fitScale;
-    viewer.panX = 0;
-    viewer.panY = 0;
-    updateTransform();
+    viewer.fitted = true;
+    resize();
+  }
+
+  function animateZoom(change) {
+    const stage = viewer.stage;
+    const animate = typeof stage.animate === 'function' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const before = animate && window.getComputedStyle(stage).transform;
+    change();
+    const after = stage.style.transform;
+    if (before && before !== 'none') {
+      viewer.zoomAnimation = stage.animate([{ transform: before }, { transform: after }], { duration: 100, easing: 'ease-out' });
+      // Interrupting the animation is expected when a gesture or resize starts.
+      void viewer.zoomAnimation.finished.catch(() => {});
+    }
   }
 
   function localize() {
@@ -62,14 +93,15 @@ function createFullscreenViewer({ t }) {
     if (!sourceSvg) return;
     const clone = sourceSvg.cloneNode(true);
     rewriteSvgIds(clone);
-    const dimensions = svgDimensions(clone);
+    const dimensions = viewer.dimensions = svgDimensions(clone);
     viewer.viewport.style.setProperty('--dsh-mmd-diagram-background', entry.renderedBackground || '');
     clone.setAttribute('width', String(dimensions.width));
     clone.setAttribute('height', String(dimensions.height));
     viewer.stage.replaceChildren(clone);
     viewer.title.textContent = t('viewerTitle', { type: entry.type });
     if (shouldFit) fit();
-    setUpdating(false);
+    else resize();
+    setUpdating(entry.streaming);
   }
 
   function setUpdating(updating) {
@@ -115,10 +147,19 @@ function createFullscreenViewer({ t }) {
     viewer.entry = null;
     viewer.trigger = null;
     viewer.stage.replaceChildren();
+    viewer.zoomAnimation?.cancel();
+    viewer.dragging = false;
+    viewer.pointerId = null;
+    delete viewer.viewport.dataset.dragging;
     document.body.style.overflow = viewer.previousBodyOverflow;
     for (const [element, wasInert] of viewer.inertedElements) element.inert = wasInert;
     viewer.inertedElements = [];
-    if (focusTarget?.isConnected) focusTarget.focus();
+    if (focusTarget?.isConnected) {
+      const target = focusTarget.disabled
+        ? focusTarget.closest('.dsh-mmd')?.querySelector('.dsh-mmd-view-control[aria-pressed="true"]')
+        : focusTarget;
+      target?.focus({ preventScroll: true });
+    }
   }
 
   function create() {
@@ -168,14 +209,17 @@ function createFullscreenViewer({ t }) {
       scale: 1, fitScale: 1, panX: 0, panY: 0, dragging: false, pointerId: null,
       lastX: 0, lastY: 0, previousBodyOverflow: '', trigger: null, inertedElements: [],
     };
-    zoomOut.addEventListener('click', () => setScale(viewer.scale / 1.2));
+    viewer.resizeObserver = new window.ResizeObserver(resize);
+    viewer.resizeObserver.observe(viewport);
+    zoomOut.addEventListener('click', () => animateZoom(() => setScale(viewer.scale / 1.2)));
     zoomLabel.addEventListener('click', () => {
       viewer.scale = 1;
       viewer.panX = 0;
       viewer.panY = 0;
+      viewer.fitted = false;
       updateTransform();
     });
-    zoomIn.addEventListener('click', () => setScale(viewer.scale * 1.2));
+    zoomIn.addEventListener('click', () => animateZoom(() => setScale(viewer.scale * 1.2)));
     fitButton.addEventListener('click', fit);
     closeButton.addEventListener('click', close);
     const anchorAt = (x, y) => {
@@ -185,6 +229,7 @@ function createFullscreenViewer({ t }) {
     const pan = (dx, dy) => {
       viewer.panX += dx;
       viewer.panY += dy;
+      viewer.fitted = false;
       updateTransform();
     };
     bindTouchZoom(viewport, {
@@ -193,7 +238,7 @@ function createFullscreenViewer({ t }) {
         pan(after.x - before.x, after.y - before.y);
       },
       doubleTap({ x, y }) {
-        if (viewer.scale !== viewer.fitScale) fit();
+        if (!viewer.fitted) fit();
         else setScale(viewer.scale * 2, anchorAt(x, y));
       },
       pan,
@@ -202,8 +247,15 @@ function createFullscreenViewer({ t }) {
       event.preventDefault();
       setScale(viewer.scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12), anchorAt(event.clientX, event.clientY));
     }, { passive: false });
+    viewport.addEventListener('dblclick', (event) => {
+      if (event.sourceCapabilities?.firesTouchEvents || event.target.closest?.('a,button,[role="button"]')) return;
+      animateZoom(() => {
+        if (!viewer.fitted) fit();
+        else setScale(viewer.scale * 2, anchorAt(event.clientX, event.clientY));
+      });
+    });
     viewport.addEventListener('pointerdown', (event) => {
-      if (event.button !== 0 || event.pointerType === 'touch') return;
+      if (viewer.dragging || event.button !== 0 || event.pointerType === 'touch' || event.target.closest?.('a,button,[role="button"]')) return;
       viewer.dragging = true;
       viewer.pointerId = event.pointerId;
       viewer.lastX = event.clientX;
@@ -223,12 +275,17 @@ function createFullscreenViewer({ t }) {
       viewer.pointerId = null;
       delete viewport.dataset.dragging;
     };
-    viewport.addEventListener('pointerup', stopDragging);
-    viewport.addEventListener('pointercancel', stopDragging);
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) viewport.addEventListener(type, stopDragging);
     overlay.addEventListener('click', (event) => {
       if (event.target === overlay) close();
     });
-    overlay.addEventListener('keydown', trapFocus);
+    overlay.addEventListener('keydown', (event) => {
+      const directions = { ArrowLeft: [1, 0], ArrowRight: [-1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
+      const direction = Object.hasOwn(directions, event.key) && directions[event.key];
+      if (!direction || event.altKey || event.ctrlKey || event.metaKey) { trapFocus(event); return; }
+      event.preventDefault();
+      pan(direction[0] * 48, direction[1] * 48);
+    });
     return viewer;
   }
 
@@ -258,6 +315,7 @@ function createFullscreenViewer({ t }) {
 
   function destroy() {
     close();
+    viewer?.resizeObserver.disconnect();
     viewer?.overlay.remove();
     viewer?.style.remove();
     viewer = null;

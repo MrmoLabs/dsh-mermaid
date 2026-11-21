@@ -22,6 +22,7 @@ body[data-ds-dark-theme] .dsh-mmd-view-control[aria-pressed='true']{color:var(--
 .dsh-mmd-btn:disabled{opacity:.45;cursor:not-allowed}
 .dsh-mmd-btn:disabled:hover{background:transparent}
 .dsh-mmd-error-actions{display:flex;flex-wrap:wrap;gap:4px;padding:4px 12px 0}
+.dsh-mmd-error-actions label{display:inline-flex;align-items:center;font-size:12px}
 .dsh-mmd-error-actions[hidden],.dsh-mmd-retry[hidden]{display:none}
 .dsh-mmd-retry,.dsh-mmd-fullscreen{border-color:var(--dsw-alias-border-l1,rgba(127,127,127,.3))}
 .dsh-mmd-body{padding:10px 12px}
@@ -83,9 +84,11 @@ const VIEWER_CSS = `
 html[data-windows-titlebar]:not([data-fullscreen]) .dsh-mmd-viewer{--dsh-mmd-titlebar-height:var(--dsh-windows-titlebar-height,40px)}
 body[data-ds-dark-theme] .dsh-mmd-viewer{background:#121212;color:var(--dsw-alias-label-primary,#f5f5f5)}
 .dsh-mmd-viewer[hidden]{display:none}
-.dsh-mmd-viewer-bar{display:flex;align-items:center;gap:8px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.3));background:var(--dsw-alias-bg-layer-1,rgba(30,30,30,.98))}
+.dsh-mmd-viewer-bar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-height:48px;padding:6px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.3));background:var(--dsw-alias-bg-layer-1,#f4f5f7)}
+body[data-ds-dark-theme] .dsh-mmd-viewer-bar{background:var(--dsw-alias-bg-layer-1,#1e1e1e)}
 .dsh-mmd-viewer-bar .dsh-mmd-btn{border-color:var(--dsw-alias-border-l1,rgba(127,127,127,.3))}
-.dsh-mmd-viewer-title{margin-right:auto;font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-secondary,#bbb)}
+.dsh-mmd-viewer-title{margin-inline-end:auto;max-width:100%;overflow-wrap:anywhere;font:12px/20px var(--ds-font-family-code,ui-monospace,monospace);color:var(--dsw-alias-label-primary,#222)}
+body[data-ds-dark-theme] .dsh-mmd-viewer-title{color:var(--dsw-alias-label-primary,#eee)}
 .dsh-mmd-viewer-viewport{position:relative;flex:1;min-height:0;overflow:hidden;cursor:grab;touch-action:none;background-color:var(--dsh-mmd-diagram-background,transparent)}
 .dsh-mmd-viewer-viewport[data-dragging='true']{cursor:grabbing}
 .dsh-mmd-viewer-stage{position:absolute;left:50%;top:50%;transform-origin:center;will-change:transform}

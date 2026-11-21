@@ -5,8 +5,12 @@ const MERMAID_TYPES = new Set([
   'flowchart', 'graph', 'sequenceDiagram', 'classDiagram', 'stateDiagram',
   'stateDiagram-v2', 'erDiagram', 'gantt', 'pie', 'journey', 'timeline',
   'mindmap', 'gitGraph', 'quadrantChart', 'requirementDiagram', 'c4Context',
-  'c4Container', 'c4Component', 'c4Dynamic', 'c4Deployment', 'block',
-  'packet', 'architecture-beta', 'sankey-beta', 'xychart-beta', 'zenuml',
+  'c4Container', 'c4Component', 'c4Dynamic', 'c4Deployment', 'C4Context',
+  'C4Container', 'C4Component', 'C4Dynamic', 'C4Deployment',
+  'block', 'block-beta', 'packet', 'packet-beta', 'architecture-beta', 'sankey-beta', 'xychart-beta', 'zenuml',
+  'kanban', 'radar-beta', 'treemap-beta', 'swimlane-beta', 'eventmodeling', 'treeView-beta',
+  'ishikawa-beta', 'venn-beta', 'wardley-beta', 'cynefin-beta',
+  'railroad-beta', 'railroad-ebnf-beta', 'railroad-abnf-beta', 'railroad-peg-beta',
 ]);
 
 function diagramBodyOffset(source) {

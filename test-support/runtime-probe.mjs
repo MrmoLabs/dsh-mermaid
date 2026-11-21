@@ -180,6 +180,26 @@ F --> A`;
       await assert.rejects(renderMermaid('source-error', source), isMermaidSourceError);
     }
 
+    const parse = runtime.parse;
+    let separateParses = 0;
+    const draws = [];
+    runtime.parse = (...args) => {
+      separateParses += 1;
+      return parse(...args);
+    };
+    runtime.render = async (_id, source) => {
+      draws.push(source);
+      return parse(source);
+    };
+    const partial = 'flowchart LR\nA[Review (check(x))]-->B';
+    await assert.rejects(renderMermaid('live-preview', partial, undefined, true));
+    assert.deepEqual(draws.splice(0), [partial]);
+    assert.equal(separateParses, 0);
+    assert.equal((await renderMermaid('final-preview', partial)).diagramType, 'flowchart-v2');
+    assert.deepEqual(draws, [partial, 'flowchart LR\nA["Review (check(x))"]-->B']);
+    assert.equal(separateParses, 0);
+    runtime.parse = parse;
+
     const drawError = new Error('drawing failed');
     runtime.render = async (_id, source, container) => {
       container.append(document.createElementNS('http://www.w3.org/2000/svg', 'svg'));

@@ -13,6 +13,9 @@ const smokeCases = args[0] === '--smoke' ? new Set([
   'issue1InvalidSource', 'issues4And7Titlebar', 'issue6TooltipOverflow', 'issues8And10ExportAndDraft',
   'issue9Original', 'issue12Original', 'codeRetryExport', 'palette-base-typography', 'palette-base-node-fill',
   'diamondAndZenUml', 'touchCanvas', 'runtimeChunkRetry',
+  'disposingStalledCardReleasesQueue', 'legacyReplacementReleasesStalledDraw', 'renderingUsesOriginalPositionsAndTypes', 'recoversComplexLabelsWithoutChangingSource',
+  'offCenterZoomKeepsSvgCoordinate', 'draftSurvivesRemountAndSettingsApply', 'fullscreenRetainsZoomAndBoundsAtResize',
+  'keyboardExportAndOptionalDiagnosticSource', 'zenUmlDarkPaletteAndExport',
 ]) : null;
 const [playwrightModule, executablePath] = smokeCases ? args.slice(1) : args;
 const { chromium } = await import(playwrightModule ? pathToFileURL(resolve(playwrightModule)).href : 'playwright-core');
@@ -26,6 +29,11 @@ apply({
 const basic = 'flowchart LR\nA-->B';
 const unfinished = 'flowchart LR\nA-->';
 const mixed = 'flowchart LR\nA[选中"节点"]-->B[Select(node)]';
+const complexLabels = [
+  'flowchart LR',
+  'A[Wait (5s); then retry] -->|f(g(x))| B{Target "ready" (x(y))?}',
+  'B --> C{{Check(input)?}} --> D(Review (confirm(x)))',
+].join('\n');
 const issueFixture = async (number) => (await readFile(new URL(`./fixtures/issue-${number}.mmd`, import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
 const [issue8, issue9, issue12] = await Promise.all([8, 9, 12].map(issueFixture));
 const issue1 = 'this is not a diagram';
@@ -34,6 +42,10 @@ const journey = 'journey\n title A long project title\n section Plan\n First ste
 const codeBlock = (source) => `<pre><code class="language-mermaid">${source.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</code></pre>`;
 const fixtures = {
   '/retry': codeBlock(basic),
+  '/draft-navigation': '<section data-conversation-session="session-one"><div data-chat-flow-key="message-1">'
+    + ('<div data-slot="conversation.chat.markdown.fence">' + codeBlock(basic) + '</div>').repeat(2) + '</div></section>',
+  '/dark-zenuml': codeBlock('zenuml\nAlice->Bob: Message'),
+  '/edge-budget': codeBlock('flowchart LR\n' + Array.from({ length: 2002 }, (_, i) => 'N' + i).join('-->')),
   '/issue-1': codeBlock(issue1),
   '/issue-6': '<style>html,body{height:100%;margin:0}article{height:100%;overflow:auto}</style>' + codeBlock(basic),
   '/issue-8': codeBlock(issue8),
@@ -42,6 +54,17 @@ const fixtures = {
   '/code-retry-export': codeBlock(journey.replace('A long project title', 'A very long title '.repeat(10).trimEnd())),
   '/stream': codeBlock(unfinished),
   '/canvas': codeBlock(mixed) + codeBlock(basic),
+  '/complex-labels': codeBlock(complexLabels),
+  '/anchored-zoom': '<div style="width:667px">' + codeBlock('flowchart LR\nA[One] --> B[Two] --> C[Three] --> D[Four]') + '</div>',
+  '/render-diagnostics': [
+    '---\ntitle: Example\nconfig:\n  theme: neutral\n---\nflowchart LR\nA --> B\nC[Broken (f(x)] --> D',
+    '%%{init: {"theme":"neutral"}}%%\nflowchart LR\n%% Comment\nA --> B\nC[Broken (f(x)] --> D',
+    'flowchart LR\nA[failed to fetch (bad(x)] --> B',
+  ].map(codeBlock).join(''),
+  '/treemap-contents': ['treemap-beta', 'treemap-beta\n"Category"\n    "Item": 0', 'treemap-beta\n"Category"\n    "Item": 15'].map(codeBlock).join(''),
+  '/untagged-diagrams': '<pre><code>treemap-beta\n"Category"\n    "Item": 15</code></pre>'
+    + '<pre><code>info</code></pre>'
+    + '<pre><code class="language-text">treemap-beta\n"Category"\n    "Item": 15</code></pre>',
   '/queue': codeBlock('flowchart LR\nA[STALL]-->B') + codeBlock(basic),
   '/offscreen': Array.from({ length: 15 }, (_, index) => codeBlock(`flowchart LR\nA[Node ${index}]-->B`) + '<div style="height:450px"></div>').join(''),
   '/geometry': `<div style="width:480px">${[wide, journey, '---\ntitle: Only a title\n---\nflowchart LR', 'xychart-beta\n x-axis [a,b,c]\n y-axis 0 --> 10\n bar [1,3,5]'].map(codeBlock).join('')}${codeBlock('flowchart LR\nInvisible --> B')}<div hidden>${codeBlock('flowchart LR\nWasHidden --> B')}</div></div>`,
@@ -409,6 +432,17 @@ try {
     return true;
   });
 
+  await run('legacyIncompleteSettlesAndRecovers', async (page) => {
+    await page.goto(origin + '/stream');
+    const card = page.locator('.dsh-mmd');
+    await page.locator('.dsh-mmd[data-state="error"]').waitFor({ timeout: 7000 });
+    assert.match(await card.locator('.dsh-mmd-error').textContent(), /第 2 行/);
+    await page.locator('pre > code').evaluate((code) => { code.textContent += 'B'; });
+    await card.locator('svg').waitFor();
+    assert.equal(await card.getAttribute('data-state'), 'ok');
+    return true;
+  });
+
   await run('nearViewportScheduling', async (page) => {
     await page.goto(`${origin}/offscreen`);
     const cards = page.locator('.dsh-mmd');
@@ -449,6 +483,308 @@ try {
     assert.match(requests[1], /\/1\/mermaid-runtime\.js$/);
     await cards.nth(0).getByRole('button', { name: '重试渲染' }).click();
     await cards.nth(0).locator('svg').waitFor();
+    return true;
+  });
+
+  await run('disposingStalledCardReleasesQueue', async (page) => {
+    const requests = [];
+    await page.route(moduleRoutes, (route) => {
+      requests.push(route.request().url());
+      if (requests.length > 1) return route.continue();
+      return route.fulfill({ contentType: 'text/javascript', body: `
+        export { default } from '/engine.js';
+        export async function renderMermaid(id, source, signal) {
+          window.stalledCardStarted = true;
+          signal.addEventListener('abort', () => { window.stalledCardDisposed = true; });
+          return new Promise(() => {});
+        }` });
+    });
+    await page.goto(origin + '/queue');
+    await page.waitForFunction(() => window.stalledCardStarted);
+    await page.locator('pre > code.language-mermaid').first().evaluate((code) => code.parentElement.remove());
+    await page.locator(readyCard).locator('svg').waitFor({ timeout: 4000 });
+    assert.equal(await page.evaluate(() => window.stalledCardDisposed), true);
+    assert.equal(requests.length, 2);
+    assert.match(requests[1], /\/1\/mermaid-runtime\.js$/);
+    return true;
+  });
+
+  for (const scenario of ['stableEditReplacesStalledDraw', 'legacyReplacementReleasesStalledDraw']) {
+    await run(scenario, async (page) => {
+      await page.route(moduleRoutes, (route) => /\/0\/mermaid-runtime\.js$/.test(route.request().url())
+        ? route.fulfill({ contentType: 'text/javascript', body: `
+          export { default, supersedeRender } from '/engine.js';
+          export function renderMermaid(id, source, signal) {
+            window.stalledEditStarted = true;
+            signal.addEventListener('abort', () => { window.stalledEditAborted = true; });
+            return new Promise(() => {});
+          }` })
+        : route.continue());
+      await page.goto(origin + '/retry');
+      await page.waitForFunction(() => window.stalledEditStarted);
+      const card = page.locator('.dsh-mmd');
+      const replacement = 'flowchart LR\nA[Replacement]-->B';
+      if (scenario === 'stableEditReplacesStalledDraw') {
+        await card.getByRole('button', { name: '编辑', exact: true }).click();
+        await card.locator('textarea').fill(replacement);
+      } else {
+        await page.locator('pre > code.language-mermaid').evaluate((code, value) => { code.textContent = value; }, replacement);
+      }
+      await card.locator('svg').filter({ hasText: 'Replacement' }).waitFor({ timeout: 4000 });
+      assert.equal(await page.evaluate(() => window.stalledEditAborted), true);
+      return true;
+    });
+  }
+
+  await run('renderingUsesOriginalPositionsAndTypes', async (page) => {
+    await page.goto(origin + '/render-diagnostics');
+    const cards = page.locator('.dsh-mmd[data-state="error"]');
+    await cards.nth(2).waitFor();
+    assert.match(await cards.nth(0).locator('.dsh-mmd-error').textContent(), /第 8 行/);
+    assert.match(await cards.nth(1).locator('.dsh-mmd-error').textContent(), /第 5 行/);
+    assert.match(await cards.nth(2).locator('.dsh-mmd-error').textContent(), /第 2 行/);
+    assert.equal(await cards.nth(2).getByRole('button', { name: '重试渲染' }).count(), 0);
+    return true;
+  });
+
+  await run('recoversComplexLabelsWithoutChangingSource', async (page) => {
+    await page.goto(origin + '/complex-labels');
+    const card = page.locator(readyCard);
+    const svg = card.locator('svg');
+    await svg.waitFor();
+    const labels = await svg.textContent();
+    for (const label of ['Wait (5s); then retry', 'f(g(x))', 'Target "ready" (x(y))?', 'Check(input)?', 'Review (confirm(x))']) {
+      assert.ok(labels.includes(label), label);
+    }
+    const shapes = await svg.locator('.node').evaluateAll((nodes) => nodes.map((node) => [...node.children].find((child) => child.matches('rect, polygon, path'))?.localName));
+    assert.deepEqual(shapes, ['rect', 'polygon', 'polygon', 'rect']);
+    assert.equal(await svg.locator('.flowchart-link').count(), 3);
+    assert.equal((await download(page, card, '下载 .mmd')).bytes.toString('utf8'), complexLabels);
+    return true;
+  });
+
+  await run('emptyTreemapAndZeroValue', async (page) => {
+    await page.goto(origin + '/treemap-contents');
+    const cards = page.locator('.dsh-mmd');
+    await cards.nth(1).locator('svg').waitFor();
+    assert.equal(await cards.nth(0).getAttribute('data-state'), 'empty');
+    assert.equal(await cards.nth(0).locator('svg').count(), 0);
+    assert.match(await cards.nth(1).locator('svg').textContent(), /Category/);
+    await cards.nth(2).scrollIntoViewIfNeeded();
+    await cards.nth(2).locator('svg').waitFor();
+    assert.match(await cards.nth(2).locator('svg').textContent(), /Item/);
+    return true;
+  });
+
+  await run('untaggedDiagramLeavesOrdinaryCodeAlone', async (page) => {
+    await page.goto(origin + '/untagged-diagrams');
+    const cards = page.locator('.dsh-mmd');
+    await cards.locator('svg').waitFor();
+    assert.equal(await cards.count(), 1);
+    assert.match(await cards.locator('svg').textContent(), /Item/);
+    assert.equal(await page.locator('pre > code', { hasText: /^info$/ }).isVisible(), true);
+    assert.equal(await page.locator('pre > code.language-text').isVisible(), true);
+    return true;
+  });
+
+  await run('offCenterZoomKeepsSvgCoordinate', async (page) => {
+    await page.goto(origin + '/anchored-zoom');
+    const card = page.locator(readyCard);
+    const pane = card.locator('.dsh-mmd-pane');
+    const svg = pane.locator('svg');
+    await svg.waitFor();
+    for (const view of ['图形', '编辑']) {
+      await card.getByRole('button', { name: view, exact: true }).click();
+      const viewport = await pane.boundingBox();
+      const before = await svg.boundingBox();
+      const anchor = before.x + before.width * 0.28;
+      assert.ok(anchor > viewport.x && anchor < viewport.x + viewport.width);
+      await page.mouse.dblclick(anchor, before.y + before.height / 2);
+      assert.equal(await pane.evaluate((element) => element.style.getPropertyValue('--dsh-mmd-inline-scale')), '2');
+      const after = await svg.boundingBox();
+      assert.ok(Math.abs(after.x + after.width * 0.28 - anchor) <= 1, view);
+      assert.equal((await pane.boundingBox()).height, viewport.height);
+      await card.getByRole('button', { name: '适应卡片', exact: true }).click();
+    }
+    return true;
+  });
+
+  await run('transientSettingsReadRecoversInPlace', async (page) => {
+    let requests = 0;
+    await page.route('**/dsh-mermaid/config.json', (route) => ++requests === 1
+      ? route.fulfill({ status: 503 })
+      : route.fulfill({ json: normalizeRenderConfig({ theme: 'dark' }) }));
+    await page.goto(origin + '/retry');
+    const card = page.locator('.dsh-mmd');
+    await card.locator('.dsh-mmd-config-warning').waitFor();
+    await card.locator('svg').waitFor();
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.dsh-mmd-pane')).backgroundColor === 'rgb(0, 0, 0)');
+    assert.equal(await card.locator('.dsh-mmd-config-warning').isVisible(), false);
+    assert.equal(requests, 2);
+    return true;
+  });
+
+  await run('draftSurvivesRemountAndSettingsApply', async (page) => {
+    let theme = 'default';
+    await page.route('**/dsh-mermaid/config.json', (route) => route.fulfill({ json: normalizeRenderConfig({ theme }) }));
+    await page.goto(origin + '/draft-navigation');
+    const cards = page.locator('.dsh-mmd');
+    const card = cards.first();
+    await card.locator('svg').waitFor();
+    await card.getByRole('button', { name: '编辑', exact: true }).click();
+    const draft = 'flowchart LR\nA[Draft survives]-->B';
+    await card.locator('textarea').fill(draft);
+    await card.locator('svg').filter({ hasText: 'Draft survives' }).waitFor();
+    theme = 'dark';
+    await page.evaluate(() => window.dispatchEvent(new Event('dsh-mermaid:settings-saved')));
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.dsh-mmd-pane')).backgroundColor === 'rgb(0, 0, 0)');
+    assert.equal(await card.locator('textarea').inputValue(), draft);
+    assert.equal(await card.getAttribute('data-view'), 'edit');
+    await page.locator('[data-chat-flow-key]').evaluate((flow) => {
+      const replacement = flow.cloneNode(true);
+      replacement.querySelectorAll('.dsh-mmd').forEach((card) => card.remove());
+      flow.replaceWith(replacement);
+    });
+    await card.locator('svg').filter({ hasText: 'Draft survives' }).waitFor();
+    assert.equal(await cards.nth(1).locator('textarea').inputValue(), basic);
+
+    // Desktop keeps the same address on navigation. The other session uses
+    // the same host message key, fence ordinal, and original diagram.
+    await page.locator('[data-conversation-session]').evaluate((conversation) => {
+      const replacement = conversation.cloneNode(true);
+      replacement.dataset.conversationSession = 'session-two';
+      replacement.querySelectorAll('.dsh-mmd').forEach((card) => card.remove());
+      conversation.replaceWith(replacement);
+    });
+    await card.locator('svg').waitFor();
+    assert.equal(await card.locator('textarea').inputValue(), basic, 'the other session inherited this session’s draft');
+    await card.getByRole('button', { name: '编辑', exact: true }).click();
+    const secondDraft = 'flowchart LR\nA[Second session]-->B';
+    await card.locator('textarea').fill(secondDraft);
+    await card.locator('svg').filter({ hasText: 'Second session' }).waitFor();
+
+    // The host can also reuse the conversation container and the same fence.
+    const originalBlock = await page.locator('article pre > code.language-mermaid').first().elementHandle();
+    await page.locator('[data-conversation-session]').evaluate((conversation) => {
+      conversation.dataset.conversationSession = 'session-one';
+    });
+    await card.locator('svg').filter({ hasText: 'Draft survives' }).waitFor({ timeout: 4000 });
+    assert.equal(await originalBlock.evaluate((element) => element.isConnected), true);
+    assert.equal(await originalBlock.textContent(), basic);
+    await card.getByRole('button', { name: '恢复原文', exact: true }).click();
+    assert.equal(await card.locator('textarea').inputValue(), basic);
+    await page.locator('[data-conversation-session]').evaluate((conversation) => {
+      conversation.dataset.conversationSession = 'session-two';
+    });
+    await card.locator('svg').filter({ hasText: 'Second session' }).waitFor({ timeout: 4000 });
+    assert.equal(await card.locator('textarea').inputValue(), secondDraft);
+    return true;
+  });
+
+  await run('fullscreenRetainsZoomAndBoundsAtResize', async (page) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(origin + '/geometry');
+    const card = page.locator(readyCard).first();
+    await card.locator('svg').waitFor();
+    await card.locator('.dsh-mmd-fullscreen').click();
+    const viewer = page.locator('.dsh-mmd-viewer');
+    const stage = viewer.locator('.dsh-mmd-viewer-stage');
+    const zoom = viewer.getByRole('button', { name: '放大', exact: true });
+    for (let i = 0; i < 4; i++) await zoom.click();
+    const scale = await stage.evaluate((node) => new DOMMatrix(getComputedStyle(node).transform).a);
+    await page.setViewportSize({ width: 370, height: 570 });
+    assert.equal(await stage.evaluate((node) => new DOMMatrix(getComputedStyle(node).transform).a), scale);
+    for (let i = 0; i < 50; i++) await zoom.press('ArrowRight');
+    const viewport = await viewer.locator('.dsh-mmd-viewer-viewport').boundingBox();
+    const svg = await stage.locator('svg').boundingBox();
+    assert.ok(svg.x + svg.width >= viewport.x + viewport.width - 1);
+    assert.ok(viewport.y + viewport.height <= 570);
+    await page.keyboard.press('Escape');
+    assert.equal(await card.locator('.dsh-mmd-fullscreen').evaluate((node) => node === document.activeElement), true);
+    return true;
+  });
+
+  await run('keyboardExportAndOptionalDiagnosticSource', async (page) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', { value: { async writeText(text) { window.copied = text; } } });
+    });
+    await page.goto(origin + '/retry');
+    const card = page.locator(readyCard);
+    await card.locator('svg').waitFor();
+    const exportButton = card.getByRole('button', { name: /^导出/ });
+    await exportButton.press('Enter');
+    const menu = card.locator('.dsh-mmd-export-list');
+    await menu.waitFor();
+    await page.keyboard.press('End');
+    assert.equal(await menu.getByRole('button', { name: '下载 .mmd' }).evaluate((node) => node === document.activeElement), true);
+    await page.keyboard.press('Escape');
+    await menu.waitFor({ state: 'hidden' });
+    assert.equal(await exportButton.evaluate((node) => node === document.activeElement), true);
+    const source = 'flowchart LR\nA[Unfinished';
+    await card.getByRole('button', { name: '编辑', exact: true }).click();
+    await card.locator('textarea').fill(source);
+    const failed = page.locator('.dsh-mmd[data-state="error"]');
+    await failed.getByRole('button', { name: '复制诊断' }).click();
+    assert.equal(await page.evaluate(() => JSON.parse(window.copied).source), undefined);
+    await failed.getByRole('checkbox', { name: '包含源码' }).check();
+    await failed.getByRole('button', { name: '复制诊断' }).click();
+    assert.equal(await page.evaluate(() => JSON.parse(window.copied).source), source);
+    assert.equal(await failed.getByRole('checkbox', { name: '包含源码' }).isChecked(), false);
+    return true;
+  });
+
+  await run('zenUmlDarkPaletteAndExport', async (page) => {
+    await page.addInitScript(() => {
+      new MutationObserver((_changes, observer) => {
+        if (document.body) {
+          document.body.setAttribute('data-ds-dark-theme', '');
+          observer.disconnect();
+        }
+      }).observe(document, { childList: true, subtree: true });
+    });
+    await page.goto(origin + '/dark-zenuml');
+    const card = page.locator(readyCard);
+    const label = card.locator('.participant-label').first();
+    await label.waitFor();
+    assert.equal(await label.evaluate((node) => getComputedStyle(node).fill), 'rgb(232, 237, 245)');
+    const exported = await download(page, card, '下载 SVG');
+    assert.match(exported.bytes.toString('utf8'), /fill:#e8edf5/);
+    assert.ok((await download(page, card, '下载 PNG（主题背景）')).bytes.readUInt32BE(16) > 0);
+    return true;
+  });
+
+  await run('edgeBudgetStopsDenseFlowchart', async (page) => {
+    await page.goto(origin + '/edge-budget');
+    const card = page.locator('.dsh-mmd[data-state="error"]');
+    await card.waitFor({ timeout: 6000 });
+    assert.equal(await card.locator('svg').count(), 0);
+    assert.match(await card.locator('.dsh-mmd-error-details').textContent(), /edge.*limit/i);
+    return true;
+  });
+
+  await run('embeddedImageExportsWithoutNetwork', async (page) => {
+    await page.goto(origin + '/retry');
+    const painted = await page.evaluate(async () => {
+      const { rasterizeSvg, serializeSvg } = await import('/engine.js');
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 4;
+      const context = canvas.getContext('2d');
+      context.fillStyle = '#44aa22';
+      context.fillRect(0, 0, 4, 4);
+      const resource = canvas.toDataURL();
+      const svg = new DOMParser().parseFromString(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><image width="4" height="4" href="' + resource + '"/></svg>',
+        'image/svg+xml'
+      ).documentElement;
+      const owned = document.importNode(svg, true);
+      const xml = serializeSvg(owned);
+      const image = await createImageBitmap(await rasterizeSvg(owned));
+      canvas.width = canvas.height = image.width;
+      context.drawImage(image, 0, 0);
+      image.close();
+      return { embedded: xml.includes(resource), pixel: [...context.getImageData(4, 4, 1, 1).data] };
+    });
+    assert.deepEqual(painted, { embedded: true, pixel: [68, 170, 34, 255] });
     return true;
   });
 
@@ -500,7 +836,8 @@ try {
     await page.route(moduleRoutes, (route) => route.fulfill({
       contentType: 'text/javascript',
       body: `import {renderMermaid as render} from '/engine.js';
-        export {default,isMermaidSourceError,rasterizeSvg,createInlinePreview} from '/engine.js';
+        export { default } from '/engine.js';
+        export * from '/engine.js';
         export async function renderMermaid(id, source, signal) {
           if (source.includes('Invisible')) return {svg:'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g opacity="0"><rect width="90" height="90"/></g><rect width="0" height="0"/></svg>'};
           return render(id, source, signal);
@@ -659,7 +996,33 @@ try {
     await card.getByRole('button', { name: '下载 PNG', exact: true }).click();
     await card.locator('.dsh-mmd-export-error').waitFor();
     await download(page, card, '下载 PNG');
-    return sizes;
+    const recovery = await page.evaluate(async () => {
+      const { rasterizeSvg } = await import('/engine.js');
+      const svg = new DOMParser().parseFromString('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 1000"><rect width="2000" height="1000"/></svg>', 'image/svg+xml').documentElement;
+      const original = HTMLCanvasElement.prototype.toBlob;
+      const originalTimer = window.setTimeout;
+      const samples = [];
+      HTMLCanvasElement.prototype.toBlob = function (callback, ...args) {
+        samples.push(this.width);
+        if (samples.length === 1) callback(null);
+        else original.call(this, callback, ...args);
+      };
+      try {
+        await rasterizeSvg(document.importNode(svg, true));
+        HTMLCanvasElement.prototype.toBlob = () => {};
+        window.setTimeout = (callback, delay, ...args) => originalTimer(callback, delay === 8000 ? 80 : delay, ...args);
+        let timedOut = false;
+        try { await rasterizeSvg(document.importNode(svg, true)); }
+        catch (error) { timedOut = /timed out/.test(error.message); }
+        return { samples, timedOut };
+      } finally {
+        HTMLCanvasElement.prototype.toBlob = original;
+        window.setTimeout = originalTimer;
+      }
+    });
+    assert.deepEqual(recovery.samples, [5656, 2828]);
+    assert.equal(recovery.timedOut, true);
+    return { sizes, recovery };
   });
 
   if (smokeCases) assert.deepEqual(new Set(Object.keys(report)), smokeCases);

@@ -91,6 +91,27 @@ function localizeGeneratedSvgTitle(svg, titleText) {
   if (generatedTitle) generatedTitle.textContent = titleText;
 }
 
+function applyDiagramPalette(svg, type, background) {
+  if (type !== 'zenuml' || background !== '#000' || !svg.id) return;
+  const style = svg.ownerDocument.createElementNS(svg.namespaceURI, 'style');
+  const scope = '#' + cssEscape(svg.id);
+  style.textContent = [
+    ['.frame-border-inner,.frame-header-bg,.participant-box,.group-title-bg', 'fill:#20242b'],
+    ['.occurrence,.fragment-header', 'fill:#3b4656'],
+    ['.frame-border-outer', 'fill:#78869a'],
+    ['.participant-box,.participant-icon [fill="currentColor"]:not([stroke]),.frame-header-line,.fragment-border,.fragment-separator,.group-outline,.occurrence,.lifeline', 'stroke:#9aa8ba'],
+    ['.frame-title,.participant-label,.message-label,.return-label,.return-icon,.fragment-label,.fragment-condition,.fragment-section-label,.group-title-text,.seq-number,.comment-text', 'fill:#e8edf5'],
+    ['.participant-icon', 'color:#e8edf5'],
+    ['.message-line,.return-line,.return-arrow,.arrow-head', 'stroke:#bdcce0'],
+    ['.arrow-head:not(.arrow-open)', 'fill:#bdcce0'],
+  ].map(([selectors, declarations]) => selectors.split(',').map((selector) => scope + ' ' + selector).join(',') + '{' + declarations + '}').join('\n');
+  svg.append(style);
+}
+
+function cssEscape(identifier) {
+  return identifier.replace(/[^\w-]/g, (character) => '\\' + character.codePointAt(0).toString(16) + ' ');
+}
+
 function svgDimensions(svg) {
   const viewBox = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
   if (viewBox.length === 4 && viewBox.every(Number.isFinite) && viewBox[2] > 0 && viewBox[3] > 0) {
@@ -113,16 +134,24 @@ function measureSvgPreview(svg, type) {
   }
   if (view.width <= 0 || view.height <= 0) return true;
   try {
-    const { x, y, width, height } = svg.getBBox();
+    const { x, y, width, height } = svg.getBBox({ fill: true, stroke: true, markers: true });
     if (![x, y, width, height].every(Number.isFinite)) return true;
     if (!width && !height) return false;
     const window = svg.ownerDocument.defaultView;
-    if (!Array.from(svg.querySelectorAll(GRAPHICS)).some((element) => isVisibleGraphic(element, svg, window))) return false;
-    if (type !== 'gantt' && type !== 'journey') return true;
-    const left = Math.min(view.x, x);
-    const top = Math.min(view.y, y);
-    const right = Math.max(view.x + view.width, x + width);
-    const bottom = Math.max(view.y + view.height, y + height);
+    // Mermaid draws its empty root as an unnamed leaf. A real leaf may hide
+    // its label when the cell is too small, so include the cell itself.
+    const treemap = type === 'treemap' || type === 'treemap-beta';
+    const graphics = treemap ? 'text, .treemapLeafGroup > rect.treemapLeaf' : GRAPHICS;
+    const visible = [...svg.querySelectorAll(graphics)].some((element) => {
+      if (treemap && element.localName === 'rect' && !element.parentElement.querySelector('.treemapLabel')?.textContent.trim()) return false;
+      return isVisibleGraphic(element, svg, window);
+    });
+    if (!visible) return false;
+    const margin = Math.min(8, Math.max(2, Math.min(view.width, view.height) * 0.02));
+    const left = x < view.x ? x - margin : view.x;
+    const top = y < view.y ? y - margin : view.y;
+    const right = x + width > view.x + view.width ? x + width + margin : view.x + view.width;
+    const bottom = y + height > view.y + view.height ? y + height + margin : view.y + view.height;
     if (left !== view.x || top !== view.y || right !== view.x + view.width || bottom !== view.y + view.height) {
       svg.setAttribute('viewBox', `${left} ${top} ${right - left} ${bottom - top}`);
     }
@@ -190,6 +219,7 @@ function rewriteSvgIds(svg) {
 }
 
 export {
+  applyDiagramPalette,
   ensureSvgAccessibility,
   hasSvgContent,
   localizeGeneratedSvgTitle,
