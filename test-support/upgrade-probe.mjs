@@ -1,6 +1,6 @@
 // Optional package-manager upgrade acceptance. Never uses the active DSH_HOME.
 // node test-support/upgrade-probe.mjs <host-executable> <dsh-cli> <playwright-module> <browser> <old.tgz> <candidate.tgz>
-// Baseline: the published 0.4.5 archive. The candidate must have a different
+// Baseline: a published 0.4.5 or 0.5.0 archive. The candidate must have a different
 // version and contain the current checkout's built client (run npm run build).
 // Supply local DSH, Playwright Core and Chromium-compatible browser paths.
 // Reports and downloads stay under the ignored .runtime directory.
@@ -108,7 +108,38 @@ async function fixture(name, { modern = false, expectedFill } = {}) {
   await page.screenshot({ path: join(directory, `${name}.png`), fullPage: true });
   assert.deepEqual(errors, []);
   await page.close();
-  return { render: true, fullscreen: true, svgExport: true, editorAndStaleExportGuard: modern ? 'passed' : 'not available in the published 0.4.5', errors };
+  return { render: true, fullscreen: true, svgExport: true, editorAndStaleExportGuard: modern ? 'passed' : 'not available in the baseline', errors };
+}
+
+async function checkStylePreview() {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, locale: 'zh-CN' });
+  try {
+    await page.goto(url);
+    const plugins = page.getByRole('button', { name: '插件', exact: true }).first();
+    await plugins.waitFor();
+    await page.waitForTimeout(500);
+    const continueButton = page.getByRole('button', { name: '继续', exact: true });
+    if (await continueButton.count()) {
+      await continueButton.click();
+      await page.getByText('开始使用', { exact: true }).waitFor();
+    }
+    await page.keyboard.press('Escape');
+    await plugins.click();
+    await page.getByText('dsh-mermaid', { exact: true }).first().click();
+    const preview = page.getByRole('region', { name: '效果预览' });
+    const checkFill = async (label, color) => {
+      await preview.getByRole('button', { name: label, exact: true }).click();
+      await page.waitForFunction((fill) => {
+        const canvas = document.querySelector('.dsh-mmd-settings-preview-canvas');
+        return canvas && [...canvas.querySelectorAll('svg g.node rect, svg g.node path, svg g.node polygon')]
+          .some((shape) => getComputedStyle(shape).fill === fill);
+      }, color);
+    };
+    await checkFill('浅色', 'rgb(221, 238, 255)');
+    await checkFill('深色', 'rgb(34, 51, 68)');
+  } finally {
+    await page.close();
+  }
 }
 
 await mkdir(profile, { recursive: true });
@@ -119,22 +150,26 @@ const neighbor = join(directory, 'neighbor');
 await mkdir(neighbor);
 await writeFile(join(neighbor, 'package.json'), JSON.stringify({ name: 'mermaid-acceptance-neighbor', version: '1.0.0', main: 'index.js' }), 'utf8');
 await writeFile(join(neighbor, 'index.js'), 'module.exports = "unrelated package retained";\n', 'utf8');
+const style = { theme: 'base', look: 'classic', themeVariables: { common: { fontSize: '16px' }, light: { mainBkg: '#ddeeff', primaryTextColor: '#223344' }, dark: { mainBkg: '#223344', primaryTextColor: '#ddeeff' } } };
+const patch = `# User-owned style and unrelated override survive package replacement.\n- id: ui-mermaid\n  config: ${JSON.stringify(style)}\n- id: session-title\n  config: { fallbackMaxWords: 7, fallbackMaxBytes: 48, maxTitleBytes: 90 }\n`;
+const patchPath = join(profile, 'cordis.patch.yml');
 try {
   await packageCommand('install-old', 'add', '-w', oldArchive, neighbor, '--ignore-scripts');
   const before = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'));
-  assert.equal(before.version, '0.4.5');
+  assert.ok(['0.4.5', '0.5.0'].includes(before.version), 'Expected the published 0.4.5 or 0.5.0 baseline');
+  const modernBaseline = before.version === '0.5.0';
+  if (modernBaseline) await writeFile(patchPath, patch, 'utf8');
   const oldClient = hash(await readFile(join(installed, 'lib', 'client.js')));
   const { chromium } = await import(pathToFileURL(playwrightModule).href);
   browser = await chromium.launch({ headless: true, executablePath: browserExecutable });
   report.browser = browser.version();
   await start('old');
-  assert.equal((await fetch(`${base}/dsh-mermaid/config.json`)).status, 404);
-  report.checks.oldRelease = await fixture('old-release');
+  const baselineConfig = await fetch(`${base}/dsh-mermaid/config.json`);
+  assert.equal(baselineConfig.status, modernBaseline ? 200 : 404);
+  if (modernBaseline) assert.deepEqual((await baselineConfig.json()).style, style);
+  report.checks.oldRelease = await fixture('old-release', { modern: modernBaseline, expectedFill: modernBaseline ? 'rgb(221, 238, 255)' : undefined });
   await stop('old');
-  const style = { theme: 'base', look: 'classic', themeVariables: { common: { fontSize: '16px' }, light: { mainBkg: '#ddeeff', primaryTextColor: '#223344' }, dark: { mainBkg: '#223344', primaryTextColor: '#ddeeff' } } };
-  const patch = `# User-owned style and unrelated override survive package replacement.\n- id: ui-mermaid\n  config: ${JSON.stringify(style)}\n- id: session-title\n  config: { fallbackMaxWords: 7, fallbackMaxBytes: 48, maxTitleBytes: 90 }\n`;
-  const patchPath = join(profile, 'cordis.patch.yml');
-  await writeFile(patchPath, patch, 'utf8');
+  if (!modernBaseline) await writeFile(patchPath, patch, 'utf8');
   const sentinel = join(home, 'acceptance-user-data.txt');
   await writeFile(sentinel, 'user-data-marker\n', 'utf8');
   const manifestBefore = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'));
@@ -154,6 +189,8 @@ try {
   assert.equal(protocol.status, 'ready');
   assert.deepEqual(protocol.style, style);
   report.checks.upgraded = await fixture('upgraded', { modern: true, expectedFill: 'rgb(221, 238, 255)' });
+  await checkStylePreview();
+  report.checks.previewUsesPreservedStyle = true;
   await stop('candidate');
   await start('restart');
   assert.deepEqual((await (await fetch(`${base}/dsh-mermaid/config.json`)).json()).style, style);

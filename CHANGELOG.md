@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.1] - 2026-11-21
+
+- Preview draft rendering styles in the plugin settings, with light and dark samples and the last successful preview retained while editing invalid settings.
+- Isolate editor drafts by conversation and message, and keep drafts when applying saved styles or returning to a recreated card.
+- Recover more flowchart labels without changing their node shapes or original source. Report errors near the original line and disable image export for empty diagrams.
+- Keep the zoom anchor under the pointer, preserve fullscreen zoom during resize, and support read-only fullscreen previews during streaming.
+- Recover stalled renders when a card is removed or superseded, and retry a temporary settings read failure in place.
+- Improve keyboard access to export actions, PNG export recovery, and dark ZenUML rendering. Diagnostics include source only when explicitly selected.
+
 ## [0.5.0] - 2026-11-20
 
 - Preview valid diagrams during native Markdown streaming and retain the last visible diagram while the source is incomplete.
