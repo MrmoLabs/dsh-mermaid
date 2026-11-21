@@ -65,3 +65,13 @@ test('scans closed indented configuration and multiline directives across line e
     assert.equal(isMermaidSource(source), false, source);
   }
 });
+
+test('recognizes a known diagram type on the same line as a closed directive', () => {
+  for (const newline of ['\n', '\r\n', '\r']) {
+    const prefix = ['%%{init: {', '  "theme": "neutral"', '}}%%  '].join(newline);
+    const source = prefix + 'flowchart LR' + newline + 'A-->B';
+    assert.equal(diagramBodyOffset(source), prefix.length);
+    assert.equal(isMermaidSource(source), true);
+  }
+  assert.equal(isMermaidSource('%%{init: {}}%% unrelated code\nflowchart LR'), false);
+});

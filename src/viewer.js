@@ -2,7 +2,27 @@ import { localizeGeneratedSvgTitle, rewriteSvgIds, svgDimensions } from './svg.j
 import { VIEWER_CSS } from './styles.js';
 import { bindTouchZoom } from './touch-zoom.js';
 
-function createFullscreenViewer({ t }) {
+const VIEWER_MESSAGES = {
+  en: {
+    viewerLabel: 'Fullscreen Mermaid diagram viewer',
+    zoomOut: 'Zoom out',
+    resetZoom: 'Reset zoom to 100%',
+    zoomIn: 'Zoom in',
+    fitWindow: 'Fit to window',
+    closeViewer: 'Close fullscreen viewer',
+  },
+  'zh-CN': {
+    viewerLabel: 'Mermaid 图全屏查看',
+    zoomOut: '缩小',
+    resetZoom: '恢复到 100%',
+    zoomIn: '放大',
+    fitWindow: '适应窗口',
+    closeViewer: '关闭全屏查看',
+  },
+};
+
+function createFullscreenViewer({ t: translate, getLocale }) {
+  const t = (key, parameters) => VIEWER_MESSAGES[getLocale?.()]?.[key] ?? translate(key, parameters);
   let viewer = null;
 
   function updateTransform() {
@@ -82,7 +102,7 @@ function createFullscreenViewer({ t }) {
     viewer.status.textContent = viewer.updating ? t('previewUpdating') : '';
     if (viewer.entry) {
       const type = viewer.entry.type;
-      viewer.title.textContent = t('viewerTitle', { type });
+      viewer.title.textContent = type + ' · Mermaid';
       localizeGeneratedSvgTitle(viewer.stage.querySelector('svg'), t('diagramTitle', { type }));
     }
   }
@@ -98,7 +118,7 @@ function createFullscreenViewer({ t }) {
     clone.setAttribute('width', String(dimensions.width));
     clone.setAttribute('height', String(dimensions.height));
     viewer.stage.replaceChildren(clone);
-    viewer.title.textContent = t('viewerTitle', { type: entry.type });
+    viewer.title.textContent = entry.type + ' · Mermaid';
     if (shouldFit) fit();
     else resize();
     setUpdating(entry.streaming);

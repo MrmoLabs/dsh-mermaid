@@ -16,6 +16,10 @@ const smokeCases = args[0] === '--smoke' ? new Set([
   'disposingStalledCardReleasesQueue', 'legacyReplacementReleasesStalledDraw', 'renderingUsesOriginalPositionsAndTypes', 'recoversComplexLabelsWithoutChangingSource',
   'offCenterZoomKeepsSvgCoordinate', 'draftSurvivesRemountAndSettingsApply', 'fullscreenRetainsZoomAndBoundsAtResize',
   'keyboardExportAndOptionalDiagnosticSource', 'zenUmlDarkPaletteAndExport',
+  'rejectsInvalidSvgGeometry', 'preservesQuotesInPureSvgLabels', 'reportsMissingSeriesAndParserLocations',
+  'recoversAdditionalFlowchartShapesAndEdges',
+  'recoversLiteralRectangleLabels',
+  'reportsInvalidGanttTaskEnds', 'emptyPieAndJourney',
 ]) : null;
 const [playwrightModule, executablePath] = smokeCases ? args.slice(1) : args;
 const { chromium } = await import(playwrightModule ? pathToFileURL(resolve(playwrightModule)).href : 'playwright-core');
@@ -34,6 +38,45 @@ const complexLabels = [
   'A[Wait (5s); then retry] -->|f(g(x))| B{Target "ready" (x(y))?}',
   'B --> C{{Check(input)?}} --> D(Review (confirm(x)))',
 ].join('\n');
+const quoteLabel = 'flowchart LR\nA[He said "hello"] --> B["Make &quot; literal"]';
+const quoteSources = [
+  '---\nconfig:\n  htmlLabels: false\n---\n' + quoteLabel,
+  '%%{init: {"htmlLabels": false}}%% ' + quoteLabel,
+];
+const invalidSankey = 'sankey-beta\nSource,Target,4\nSource,Other,invalid';
+const invalidGantt = '---\ntitle: Schedule\n---\ngantt\n%% Task below\ndateFormat YYYY-MM-DD\nTask :a, 2026-11-20, qwerty';
+const validGantt = [
+  'gantt',
+  'dateFormat DD/MM/YYYY',
+  'Same day :a, 20/11/2026, 20/11/2026',
+  'Deadline :milestone, b, after a, 0d',
+  'Marker :vert, c, 20/11/2026,',
+  'Wait :d, 19/11/2026, until b',
+  'Finish :1.5h',
+].join('\n');
+const extendedLabelPairs = [
+  ['subgraph Group[Review (Phase [1])]', 'subgraph Group["Review (Phase [1])"]'],
+  ['A[(Store (nested [1]))]', 'A[("Store (nested [1])")]'],
+  ['B[/Read (job)/]', 'B[/"Read (job)"/]'],
+  ['C[\\Write (job)\\]', 'C[\\"Write (job)"\\]'],
+  ['D[[Call (sub [2])]]', 'D[["Call (sub [2])"]]'],
+  ['E>Hint (look)]', 'E>"Hint (look)"]'],
+  ['end', 'end'],
+  ['A --x|f(g(x))| B', 'A --x|"f(g(x))"| B'],
+  ['B --o|Next (x)| C', 'B --o|"Next (x)"| C'],
+  ['C o--o|Round (y)| D', 'C o--o|"Round (y)"| D'],
+  ['D -..->|Dash (z)| E', 'D -..->|"Dash (z)"| E'],
+  ['E e1@o--o|Tracked (z)| A', 'E e1@o--o|"Tracked (z)"| A'],
+  ['F[He said "hello] --> A', 'F["He said #quot;hello"] --> A'],
+  ['classDef styleGroup fill:#abc,stroke:#234', 'classDef styleGroup fill:#abc,stroke:#234'],
+];
+const extendedLabelSources = [0, 1].map((column) => ['flowchart LR', ...extendedLabelPairs.map((pair) => pair[column])].join('\n'));
+const literalLabels = [
+  'Run (RPC', 'Run RPC)', '(RPC) handler', 'Run (x) | fallback', 'Cost (x < 2)',
+  'Wait (5s)\nthen retry', 'Wait (5s) %% done', 'Load C:\\work (local)', 'Run \x60cmd\x60 (local)',
+];
+const literalLabelSources = literalLabels.map((label) => 'flowchart LR\nA[' + label + '] --> B');
+literalLabelSources.push('---\nconfig:\n  htmlLabels: false\n---\nflowchart LR\nA[Cost (x < 2) | Compare] --> B');
 const issueFixture = async (number) => (await readFile(new URL(`./fixtures/issue-${number}.mmd`, import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
 const [issue8, issue9, issue12] = await Promise.all([8, 9, 12].map(issueFixture));
 const issue1 = 'this is not a diagram';
@@ -55,6 +98,26 @@ const fixtures = {
   '/stream': codeBlock(unfinished),
   '/canvas': codeBlock(mixed) + codeBlock(basic),
   '/complex-labels': codeBlock(complexLabels),
+  '/additional-labels': extendedLabelSources.map(codeBlock).join(''),
+  '/literal-labels': literalLabelSources.map(codeBlock).join(''),
+  '/pure-svg-quotes': quoteSources.map(codeBlock).join(''),
+  '/invalid-svg-geometry': [invalidSankey, 'gantt\ntitle Schedule', 'flowchart LR\nA["NaN and Infinity"]', 'sankey-beta\nSource,Target,4']
+    .map(codeBlock).join(''),
+  '/gantt-ends': [invalidGantt, validGantt, invalidGantt.replace('qwerty', '2026-02-31'), invalidGantt.replace(' qwerty', '')]
+    .map(codeBlock).join(''),
+  '/empty-pie-and-journey': ['pie', 'journey', 'journey\nsection Plan', 'pie title Sample', 'journey\ntitle Sample',
+    'pie\n"First": 1\n"Zero": 0', journey].map(codeBlock).join(''),
+  '/data-diagnostics': [
+    'xychart-beta',
+    'xychart-beta\n x-axis [A,B]\n y-axis 0 --> 10',
+    'sequenceDiagram\nAlice->>\nBob->>Alice: hello',
+    'classDiagram\nclass Box {\n +run()',
+    'quadrantChart\n Sample: [2, 3]',
+    'packet-beta\n7-0: "Invalid"',
+    '%% Packet fixture\npacket-beta\n0-7: "A"\n4-9: "B"',
+    'mindmap\n  root1\n  root2',
+    'packet-beta\n0-7: "A"\n0-7: "B"',
+  ].map(codeBlock).join(''),
   '/anchored-zoom': '<div style="width:667px">' + codeBlock('flowchart LR\nA[One] --> B[Two] --> C[Three] --> D[Four]') + '</div>',
   '/render-diagnostics': [
     '---\ntitle: Example\nconfig:\n  theme: neutral\n---\nflowchart LR\nA --> B\nC[Broken (f(x)] --> D',
@@ -63,6 +126,7 @@ const fixtures = {
   ].map(codeBlock).join(''),
   '/treemap-contents': ['treemap-beta', 'treemap-beta\n"Category"\n    "Item": 0', 'treemap-beta\n"Category"\n    "Item": 15'].map(codeBlock).join(''),
   '/untagged-diagrams': '<pre><code>treemap-beta\n"Category"\n    "Item": 15</code></pre>'
+    + '<pre><code>%%{init: {"theme":"neutral"}}%% flowchart LR\nDirectiveFixture --> Done</code></pre>'
     + '<pre><code>info</code></pre>'
     + '<pre><code class="language-text">treemap-beta\n"Category"\n    "Item": 15</code></pre>',
   '/queue': codeBlock('flowchart LR\nA[STALL]-->B') + codeBlock(basic),
@@ -563,6 +627,179 @@ try {
     return true;
   });
 
+  await run('recoversAdditionalFlowchartShapesAndEdges', async (page) => {
+    await page.goto(origin + '/additional-labels');
+    const cards = page.locator('.dsh-mmd');
+    const diagrams = [];
+    for (const index of [0, 1]) {
+      const card = cards.nth(index);
+      await card.scrollIntoViewIfNeeded();
+      const svg = card.locator('.dsh-mmd-pane svg');
+      await svg.waitFor();
+      diagrams.push(await svg.evaluate((root) => ({
+        nodes: [...root.querySelectorAll('.node')].map((node) => [
+          node.querySelector('.nodeLabel')?.textContent,
+          [...node.children].filter((child) => child.matches('rect, polygon, path, circle'))
+            .map((child) => [child.localName, child.getAttribute('class')]),
+        ]),
+        labels: [...root.querySelectorAll('span.edgeLabel, .cluster-label')].map((label) => label.textContent),
+        endpoints: [...root.querySelectorAll('.flowchart-link')].map((path) =>
+          ['marker-start', 'marker-end'].map((attribute) =>
+            path.getAttribute(attribute)?.match(/-([A-Za-z]+(?:Start|End))\)$/)?.[1] ?? null)),
+      })));
+    }
+    assert.deepEqual(diagrams[0], diagrams[1]);
+    assert.ok(diagrams[0].labels.includes('Review (Phase [1])'));
+    assert.ok(diagrams[0].labels.includes('Tracked (z)'));
+    assert.ok(diagrams[0].nodes.some(([label]) => label === 'He said "hello'));
+    assert.ok(diagrams[0].endpoints.some((pair) => pair[1] === 'crossEnd'));
+    assert.ok(diagrams[0].endpoints.some((pair) => pair[0] === 'circleStart' && pair[1] === 'circleEnd'));
+    assert.equal((await download(page, cards.nth(0), '下载 .mmd')).bytes.toString('utf8'), extendedLabelSources[0]);
+    return true;
+  });
+
+  await run('recoversLiteralRectangleLabels', async (page) => {
+    await page.goto(origin + '/literal-labels');
+    const cards = page.locator('.dsh-mmd');
+    const labels = [...literalLabels, 'Cost (x < 2) | Compare'];
+    for (const [index, source] of literalLabelSources.entries()) {
+      const card = cards.nth(index);
+      await card.scrollIntoViewIfNeeded();
+      const svg = card.locator('.dsh-mmd-pane svg');
+      await svg.waitFor();
+      const nodes = svg.locator('.node');
+      assert.equal(await nodes.count(), 2);
+      assert.equal(await nodes.first().locator(':scope > rect').count(), 1);
+      assert.equal(await svg.locator('.flowchart-link').count(), 1);
+      const displayed = await nodes.first().locator('.nodeLabel, text').evaluate((label) => {
+        const copy = label.cloneNode(true);
+        copy.querySelectorAll('br').forEach((lineBreak) => lineBreak.replaceWith(' '));
+        return copy.textContent.trim();
+      });
+      assert.equal(displayed, labels[index].replace('\n', ' '));
+      assert.equal(await page.locator('article > pre code').nth(index).textContent(), source);
+    }
+    for (const index of [2, 5, 9]) {
+      assert.equal((await download(page, cards.nth(index), '下载 .mmd')).bytes.toString('utf8'), literalLabelSources[index]);
+    }
+    return true;
+  });
+
+  await run('preservesQuotesInPureSvgLabels', async (page) => {
+    await page.goto(origin + '/pure-svg-quotes');
+    const cards = page.locator('.dsh-mmd');
+    for (const [index, source] of quoteSources.entries()) {
+      const card = cards.nth(index);
+      await card.scrollIntoViewIfNeeded();
+      const svg = card.locator('.dsh-mmd-pane svg');
+      await svg.waitFor();
+      assert.equal(await svg.locator('foreignObject').count(), 0);
+      const label = await svg.locator('.node').first().locator('text').textContent();
+      assert.equal(label, 'He said "hello"');
+      assert.match(await svg.locator('.node').nth(1).locator('text').textContent(), /Make &quot; literal/);
+      const exported = await download(page, card, '下载 SVG');
+      assert.equal(await page.evaluate((xml) => {
+        const document = new DOMParser().parseFromString(xml, 'image/svg+xml');
+        return document.querySelector('.node text')?.textContent;
+      }, exported.bytes.toString('utf8')), label);
+      assert.equal((await download(page, card, '下载 .mmd')).bytes.toString('utf8'), source);
+    }
+    return true;
+  });
+
+  await run('rejectsInvalidSvgGeometry', async (page) => {
+    await page.goto(origin + '/invalid-svg-geometry');
+    const cards = page.locator('.dsh-mmd');
+    for (const index of [0, 1]) {
+      const card = cards.nth(index);
+      await card.scrollIntoViewIfNeeded();
+      await card.locator('[role="status"]').filter({ hasText: /无效坐标/ }).waitFor({ state: 'attached' });
+      assert.equal(await card.getAttribute('data-state'), 'error');
+      assert.equal(await card.locator('.dsh-mmd-pane svg').count(), 0);
+      assert.equal(await card.locator('.dsh-mmd-export-list button').first().isEnabled(), false);
+    }
+    const textCard = cards.nth(2);
+    await textCard.scrollIntoViewIfNeeded();
+    assert.match(await textCard.locator('.dsh-mmd-pane svg').textContent(), /NaN and Infinity/);
+    const valid = cards.nth(3);
+    await valid.scrollIntoViewIfNeeded();
+    const svg = valid.locator('.dsh-mmd-pane svg');
+    const baseline = await svg.textContent();
+    await valid.getByRole('button', { name: '编辑', exact: true }).click();
+    await valid.locator('textarea').fill(invalidSankey);
+    await valid.locator('[role="status"]').filter({ hasText: /无效坐标/ }).waitFor({ state: 'attached' });
+    assert.equal(await svg.textContent(), baseline);
+    assert.equal(await valid.locator('.dsh-mmd-export-list button').first().isEnabled(), false);
+    return true;
+  });
+
+  await run('reportsMissingSeriesAndParserLocations', async (page) => {
+    await page.goto(origin + '/data-diagnostics');
+    const cards = page.locator('.dsh-mmd');
+    const locations = [/bar 或 line 数据系列/, /bar 或 line 数据系列/, /第 2 行/, /第 3 行/,
+      /第 2 行/, /第 2 行/, /第 4 行/, /第 3 行/];
+    for (const [index, expected] of locations.entries()) {
+      const card = cards.nth(index);
+      await card.scrollIntoViewIfNeeded();
+      await card.locator('.dsh-mmd-error').filter({ hasText: expected }).waitFor({ state: 'attached' });
+      assert.equal(await card.getAttribute('data-state'), 'error');
+      assert.equal(await card.locator('.dsh-mmd-retry').isVisible(), false);
+    }
+    const duplicate = cards.nth(locations.length);
+    await duplicate.scrollIntoViewIfNeeded();
+    const error = duplicate.locator('.dsh-mmd-error').filter({ hasText: /图表渲染失败/ });
+    await error.waitFor({ state: 'attached' });
+    assert.doesNotMatch(await error.textContent(), /第 \d+ 行/);
+    return true;
+  });
+
+  await run('reportsInvalidGanttTaskEnds', async (page) => {
+    await page.goto(origin + '/gantt-ends');
+    const cards = page.locator('.dsh-mmd');
+    for (const index of [0, 2, 3]) {
+      const card = cards.nth(index);
+      await card.scrollIntoViewIfNeeded();
+      await card.locator('.dsh-mmd-error').filter({ hasText: /第 7 行.*结束日期或工期/ }).waitFor({ state: 'attached' });
+      assert.equal(await card.getAttribute('data-state'), 'error');
+      assert.equal(await card.locator('.dsh-mmd-pane svg').count(), 0);
+      assert.equal(await card.locator('.dsh-mmd-retry').isVisible(), false);
+      const buttons = card.locator('.dsh-mmd-export-list button');
+      for (const index of [0, 1, 2]) assert.equal(await buttons.nth(index).isEnabled(), false);
+    }
+    assert.equal((await download(page, cards.first(), '下载 .mmd')).bytes.toString('utf8'), invalidGantt);
+
+    const valid = cards.nth(1);
+    await valid.scrollIntoViewIfNeeded();
+    const svg = valid.locator('.dsh-mmd-pane svg');
+    await svg.waitFor();
+    assert.match(await svg.textContent(), /Deadline/);
+    assert.ok((await download(page, valid, '下载 SVG')).bytes.length > 0);
+    return true;
+  });
+
+  await run('emptyPieAndJourney', async (page) => {
+    await page.goto(origin + '/empty-pie-and-journey');
+    const cards = page.locator('.dsh-mmd');
+    for (const index of [0, 1, 2]) {
+      const card = cards.nth(index);
+      await card.scrollIntoViewIfNeeded();
+      await card.locator('.dsh-mmd-pane').filter({ hasText: '图表为空。' }).waitFor();
+      assert.equal(await card.getAttribute('data-state'), 'empty');
+      assert.equal(await card.locator('svg').count(), 0);
+      const buttons = card.locator('.dsh-mmd-export-list button');
+      for (const index of [0, 1, 2]) assert.equal(await buttons.nth(index).isEnabled(), false);
+      assert.equal(await buttons.nth(3).isEnabled(), true);
+    }
+    for (const [index, content] of ['Sample', 'Sample', 'First', 'First step'].entries()) {
+      const card = cards.nth(index + 3);
+      await card.scrollIntoViewIfNeeded();
+      assert.ok((await card.locator('.dsh-mmd-pane svg').textContent()).includes(content));
+      assert.equal(await card.getAttribute('data-state'), 'ok');
+      assert.equal(await card.locator('.dsh-mmd-export-list button').first().isEnabled(), true);
+    }
+    return true;
+  });
+
   await run('emptyTreemapAndZeroValue', async (page) => {
     await page.goto(origin + '/treemap-contents');
     const cards = page.locator('.dsh-mmd');
@@ -579,9 +816,9 @@ try {
   await run('untaggedDiagramLeavesOrdinaryCodeAlone', async (page) => {
     await page.goto(origin + '/untagged-diagrams');
     const cards = page.locator('.dsh-mmd');
-    await cards.locator('svg').waitFor();
-    assert.equal(await cards.count(), 1);
-    assert.match(await cards.locator('svg').textContent(), /Item/);
+    assert.match(await cards.nth(0).locator('svg').textContent(), /Item/);
+    assert.match(await cards.nth(1).locator('svg').textContent(), /DirectiveFixture/);
+    assert.equal(await cards.count(), 2);
     assert.equal(await page.locator('pre > code', { hasText: /^info$/ }).isVisible(), true);
     assert.equal(await page.locator('pre > code.language-text').isVisible(), true);
     return true;

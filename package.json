@@ -1,6 +1,6 @@
 {
   "name": "dsh-mermaid",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Render and edit Mermaid code blocks in DeepSeek Harness with diagram, code, and inline editor views.",
   "author": {
     "name": "Mrmo072",
@@ -63,6 +63,7 @@
     "@deepseek-ai/cosmokit": "1.9.0",
     "@deepseek-ai/schemastery": "3.19.0",
     "@mermaid-js/mermaid-zenuml": "1.0.1",
+    "dayjs": "1.11.23",
     "esbuild": "0.28.2",
     "happy-dom": "21.0.4",
     "katex": "0.18.2",

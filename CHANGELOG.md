@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.2] - 2026-11-21
+
+- Recover more unquoted flowchart labels in nodes, subgraphs, and links while preserving their text, shapes, endpoints, and original source. Keep double quotes visible in pure SVG labels.
+- Recognize unlabelled Mermaid fences with an inline init directive. Apply the same source line limit to LF, CRLF, and CR inputs.
+- Improve source diagnostics for incomplete or invalid diagrams, including XY charts without a data series and Gantt tasks with an invalid end date or duration.
+- Block image export when a diagram has invalid SVG geometry. Treat Pie and Journey diagrams with no title or data as empty while keeping their source available.
+
 ## [0.5.1] - 2026-11-21
 
 - Preview draft rendering styles in the plugin settings, with light and dark samples and the last successful preview retained while editing invalid settings.

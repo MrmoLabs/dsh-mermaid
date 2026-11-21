@@ -70,7 +70,7 @@ function setMermaidRuntimeForTesting(runtime, positionerFactory, viewPositioner,
   });
   tooltipPositionerFactory = positionerFactory;
   preserveViewPosition = viewPositioner;
-  fullscreenViewer = viewerFactory?.({ t }) ?? null;
+  fullscreenViewer = viewerFactory?.({ t, getLocale: () => currentLocale }) ?? null;
   return () => {
     mermaidRuntime = previous;
     runtimePromise = previousPromise;
@@ -125,7 +125,7 @@ function loadMermaidRuntime() {
         };
         tooltipPositionerFactory = module.createTooltipPositioner;
         preserveViewPosition = module.preserveViewPosition;
-        fullscreenViewer ||= module.createFullscreenViewer?.({ t });
+        fullscreenViewer ||= module.createFullscreenViewer?.({ t, getLocale: () => currentLocale });
         return mermaidRuntime;
       })
       .catch((error) => {
@@ -958,7 +958,7 @@ async function renderDiagram(entry) {
   if (source.length > MAX_SOURCE_CHARS) {
     limitMessage = { key: 'tooLong', parameters: { actual: source.length, limit: MAX_SOURCE_CHARS } };
   } else {
-    const lineCount = source.split('\n', MAX_SOURCE_LINES + 1).length;
+    const lineCount = source.split(/\r\n?|\n/, MAX_SOURCE_LINES + 1).length;
     if (lineCount > MAX_SOURCE_LINES) {
       limitMessage = { key: 'tooManyLines', parameters: { actual: lineCount, limit: MAX_SOURCE_LINES } };
     }
@@ -1003,7 +1003,11 @@ async function renderDiagram(entry) {
       setEntryError(entry, 'missingSvg', {});
       return;
     }
-    if (!svgTools.hasSvgContent(svgElement)) {
+    if (!svgTools.hasFiniteSvgGeometry(svgElement)) {
+      setEntryError(entry, 'invalidSvgGeometry', {});
+      return;
+    }
+    if (!svgTools.hasSvgContent(svgElement, renderedType)) {
       setEntryEmpty(entry, 'emptyDiagram');
       return;
     }

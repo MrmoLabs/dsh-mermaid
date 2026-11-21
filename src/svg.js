@@ -42,18 +42,34 @@ function serializeSvg(svg) {
 }
 
 const GRAPHICS = 'circle, ellipse, foreignObject, image, line, path, polygon, polyline, rect, text, use';
+const GEOMETRY_ATTRIBUTES = new Set([
+  'viewBox', 'transform', 'd', 'points', 'x', 'y', 'x1', 'y1', 'x2', 'y2',
+  'cx', 'cy', 'r', 'rx', 'ry', 'width', 'height', 'dx', 'dy',
+  'refX', 'refY', 'markerWidth', 'markerHeight', 'pathLength',
+]);
 
-function isContentGraphic(element) {
+function hasFiniteSvgGeometry(svg) {
+  return ![svg, ...svg.querySelectorAll('*')].some((element) =>
+    element.namespaceURI === svg.namespaceURI && [...element.attributes].some(({ name, value }) =>
+      GEOMETRY_ATTRIBUTES.has(name) && /NaN|Infinity/.test(value)));
+}
+
+function isContentGraphic(element, type) {
+  // Mermaid always draws the pie outline and journey timeline, even when
+  // the source has no slices or steps. A visible title still counts.
+  if (type === 'pie' && element.classList.contains('pieOuterCircle')) return false;
+  if (type === 'journey' && element.localName === 'line' && element.parentElement.localName === 'svg' &&
+      element.getAttribute('marker-end') === `url(#${element.parentElement.id}-arrowhead)`) return false;
   return !element.closest('defs, marker, clipPath, mask, pattern, symbol') &&
     (element.localName !== 'text' || Boolean(element.textContent.trim()));
 }
 
-function hasSvgContent(svg) {
-  return Array.from(svg.querySelectorAll(GRAPHICS)).some(isContentGraphic);
+function hasSvgContent(svg, type) {
+  return Array.from(svg.querySelectorAll(GRAPHICS)).some((element) => isContentGraphic(element, type));
 }
 
-function isVisibleGraphic(element, svg, window) {
-  if (!isContentGraphic(element)) return false;
+function isVisibleGraphic(element, svg, window, type) {
+  if (!isContentGraphic(element, type)) return false;
   const style = window.getComputedStyle(element);
   if (style.visibility === 'hidden' || style.visibility === 'collapse' || style.display === 'none' || style.opacity === '0') return false;
   for (let parent = element.parentElement; parent && parent !== svg; parent = parent.parentElement) {
@@ -144,7 +160,7 @@ function measureSvgPreview(svg, type) {
     const graphics = treemap ? 'text, .treemapLeafGroup > rect.treemapLeaf' : GRAPHICS;
     const visible = [...svg.querySelectorAll(graphics)].some((element) => {
       if (treemap && element.localName === 'rect' && !element.parentElement.querySelector('.treemapLabel')?.textContent.trim()) return false;
-      return isVisibleGraphic(element, svg, window);
+      return isVisibleGraphic(element, svg, window, type);
     });
     if (!visible) return false;
     const margin = Math.min(8, Math.max(2, Math.min(view.width, view.height) * 0.02));
@@ -221,6 +237,7 @@ function rewriteSvgIds(svg) {
 export {
   applyDiagramPalette,
   ensureSvgAccessibility,
+  hasFiniteSvgGeometry,
   hasSvgContent,
   localizeGeneratedSvgTitle,
   prepareSvgPreview,

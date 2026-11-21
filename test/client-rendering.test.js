@@ -105,3 +105,30 @@ test('renders localized accessible cards and recovers from errors', async () => 
     await harness.cleanup();
   }
 });
+
+test('enforces the same line limit across line endings without changing the source', async () => {
+  const harness = await createClientHarness();
+  const { addCodeBlock, state, wait } = harness;
+  try {
+    const cases = [];
+    for (const separators of [['\n'], ['\r\n'], ['\r'], ['\r', '\n', '\r\n']]) {
+      for (const lineCount of [2_000, 2_001]) {
+        const source = Array.from({ length: lineCount }, (_, index) =>
+          index === 0 ? 'flowchart LR' : separators[(index - 1) % separators.length] + 'A-->B').join('');
+        cases.push({ ...addCodeBlock(source), source, lineCount });
+      }
+    }
+    await wait(1_100);
+    for (const { code, pre, source, lineCount } of cases) {
+      assert.equal(code.textContent, source);
+      const card = pre.previousElementSibling;
+      assert.equal(card.dataset.state, lineCount === 2_000 ? 'ok' : 'error');
+      if (lineCount === 2_001) {
+        assert.match(card.querySelector('.dsh-mmd-error').textContent, /2001 行.*2000 行/);
+        assert.equal(state.renderCalls.includes(source), false);
+      } else {
+        assert.equal(state.renderCalls.includes(source), true);
+      }
+    }
+  } finally { await harness.cleanup(); }
+});

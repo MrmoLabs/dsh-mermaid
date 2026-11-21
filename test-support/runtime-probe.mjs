@@ -158,8 +158,12 @@ F --> A`;
     assert.deepEqual(renderCalls.splice(0), [attributedTag]);
 
     const missingQuote = 'flowchart LR\n A[Keep "text]';
-    await assert.rejects(renderMermaid('unpaired-quote', missingQuote), (error) => error?.hash?.token === 'STR');
-    assert.deepEqual(renderCalls.splice(0), [missingQuote]);
+    assert.equal((await renderMermaid('unpaired-quote', missingQuote)).diagramType, 'flowchart-v2');
+    assert.deepEqual(renderCalls.splice(0), [missingQuote, missingQuote.replace('"', '#quot;')]);
+    for (const source of ['flowchart LR\n A[Keep "text] stray', 'flowchart LR\n A["Keep text]']) {
+      await assert.rejects(renderMermaid('ambiguous-quote', source), isMermaidSourceError);
+      assert.deepEqual(renderCalls.splice(0), [source]);
+    }
 
     const brokenLink = `${embeddedQuotes}\n F -->`;
     await assert.rejects(renderMermaid('broken-link', brokenLink), (error) => error?.hash?.token === 'STR');

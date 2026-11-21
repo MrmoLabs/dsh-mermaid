@@ -33,7 +33,9 @@ function diagramBodyOffset(source) {
       while (!lines[index][0].includes('}%%') && ++index < lines.length) { /* Skip the complete directive. */ }
       if (index === lines.length) return -1;
       const closing = lines[index][0];
-      if (closing.slice(closing.indexOf('}%%') + 3).trim()) return -1;
+      const suffix = closing.slice(closing.indexOf('}%%') + 3).trimStart();
+      if (suffix) return MERMAID_TYPES.has(DIAGRAM_TYPE_RE.exec(suffix)?.[1])
+        ? lines[index].index + closing.length - suffix.length : -1;
       continue;
     }
     if (line.startsWith('%%')) continue;
