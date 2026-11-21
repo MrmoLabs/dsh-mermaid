@@ -6,6 +6,6 @@ Captured on 2026-11-20 in Windows Chromium using the Web host bundled with DSH D
 - [Inline editor](editor-en.jpg) shows the preview after changing the diagram direction from `LR` to `TD`.
 - [Export menu](export-en.jpg) shows SVG, both PNG options, and `.mmd`.
 - [Fullscreen viewer](fullscreen-en.jpg) shows the original workflow fitted to the viewport.
-- [Rendering settings](render-settings-en.png) shows the Light tab after loading the Indigo / Slate example.
+- [Rendering settings](render-settings-en.png) was recaptured on 2026-11-21 with the same host. It shows the live flowchart preview and Light tab after loading Indigo / Slate.
 
 See the [README compatibility section](../../README.md#compatibility) for the broader verification coverage.

@@ -96,6 +96,7 @@ function createSettingsModel(scope) {
     const stored = normalizeRenderConfig(host.value);
     snapshot = {
       draft: { ...draft, groups: { ...draft.groups } },
+      draftStyle: validation.style,
       available: host.status === 'ready' || (host.revision !== undefined && host.writable),
       writable: Boolean(host.writable),
       dirty, saving, failed, invalid: !validation.style || !host.writable,

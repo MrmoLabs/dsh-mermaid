@@ -5,6 +5,7 @@ const GROUPS = ['common', 'light', 'dark'];
 const FORBIDDEN = new Set(['__proto__', 'prototype', 'constructor']);
 const DIAGNOSTIC_CODES = new Set(['INVALID_CONFIG', 'UNKNOWN_FIELD', 'INVALID_THEME', 'INVALID_LOOK', 'INVALID_VARIABLES', 'INVALID_VALUE', 'UNSAFE_KEY', 'MAX_DEPTH', 'MAX_ITEMS', 'MAX_STRING', 'MAX_BYTES', 'TRUNCATED']);
 const DEFAULT_STYLE = deepFreeze({ theme: 'auto', look: 'classic', themeVariables: { common: {}, light: {}, dark: {} } });
+const MAX_SOURCE_CHARS = 50_000;
 
 function isPlainObject(value) {
   if (!value || typeof value !== 'object') return false;
@@ -166,10 +167,22 @@ function effectiveStyle(style, dark) {
   }
   return deepFreeze(result);
 }
+
+function initializeMermaid(runtime, style) {
+  runtime.initialize({
+    startOnLoad: false,
+    securityLevel: 'strict',
+    suppressErrorRendering: true,
+    ...JSON.parse(JSON.stringify(style)),
+    maxTextSize: MAX_SOURCE_CHARS,
+    maxEdges: 2_000,
+  });
+}
+
 function styleKey(value) {
   if (Array.isArray(value)) return `[${value.map(styleKey).join(',')}]`;
   if (isPlainObject(value)) return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${styleKey(value[key])}`).join(',')}}`;
   return JSON.stringify(value);
 }
 
-export { DEFAULT_STYLE, DIAGNOSTIC_CODES, deepFreeze, effectiveStyle, isPlainObject, mergeVariables, normalizeRenderConfig, styleKey };
+export { DEFAULT_STYLE, DIAGNOSTIC_CODES, MAX_SOURCE_CHARS, deepFreeze, effectiveStyle, initializeMermaid, isPlainObject, mergeVariables, normalizeRenderConfig, styleKey };

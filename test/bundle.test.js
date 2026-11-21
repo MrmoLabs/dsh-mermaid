@@ -30,6 +30,7 @@ test('browser bundle registers dsh-mermaid and its real runtime respects the doc
   const settings = await readFile('lib/settings-runtime.js');
   const settingsRevision = createHash('sha256').update(settings).digest('hex').slice(0, 12);
   assert.ok(bundle.includes(settingsRevision), 'native settings asset must be content-versioned independently');
+  assert.ok(settings.includes(runtimeRevision), 'the settings preview must use the packaged runtime revision');
   assert.ok(settings.length < 40_000, 'native editor must use host React/controls instead of bundling them');
   const hostBundle = await readFile('lib/index.js', 'utf8');
   assert.doesNotMatch(hostBundle, /from ['"]\.\.?\//);
@@ -56,6 +57,12 @@ test('browser bundle registers dsh-mermaid and its real runtime respects the doc
   assert.equal(chunkResponse.status, 200);
   assert.deepEqual(chunkResponse.body, chunks[0]);
   assert.match(chunkResponse.headers['cache-control'], /immutable/);
+  const previewUrl = host.runtimeUrl('preview-0');
+  assert.notEqual(previewUrl, host.runtimeUrl());
+  assert.deepEqual((await runtimeRequest('GET', previewUrl)).body, runtime);
+  const previewChunk = new URL(`mermaid-chunks/${chunkNames[0]}`, `http://localhost${previewUrl}`).pathname;
+  assert.deepEqual((await runtimeRequest('GET', previewChunk)).body, chunks[0]);
+  assert.equal((await runtimeRequest('GET', `${previewChunk}/../../index.js`)).status, 404);
   assert.equal((await runtimeRequest('POST', chunk)).status, 405);
   assert.equal((await runtimeRequest('GET', `${chunk}/../../index.js`)).status, 404);
   let styleType;

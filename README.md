@@ -94,8 +94,9 @@ The defaults remain `auto` color and `classic` look. Colors support `auto` (foll
 
 Open **Plugins → Installed plugins → dsh-mermaid** in the sidebar. The **Rendering style** form offers color and drawing-style selections without locating a file or writing YAML.
 
-![The Rendering style form with the Indigo / Slate example, light and dark tabs, and separate base and node fill colors](docs/images/render-settings-en.png)
+![The Rendering style form with a live Mermaid preview and the Indigo / Slate example](docs/images/render-settings-en.png)
 
+- **Style preview** renders a sample flowchart with the current draft. With **Follow DSH** or **Custom**, switch between **Light** and **Dark** to compare variants before saving. If the draft is invalid, the last rendered preview stays visible.
 - Select **Custom** to edit fonts, font size, base color, node fill/text/border and line colors under Common / Light / Dark. Empty fields inherit common variables or Mermaid defaults.
 - **Base color** edits `primaryColor`; **Node fill** edits `mainBkg`, used by flowcharts and other types. They are saved independently without overwriting advanced settings, with a hint when a separate fill exists. Other diagram types may use dedicated variables.
 - Leaving node text unset lets the plugin choose a readable default for an opaque hex fill. An explicit node text color takes precedence.

@@ -40,8 +40,9 @@ function registerAsset(server, path, file, mediaType) {
 function serveRuntime(req, res) {
   const prefix = `${RUNTIME_PREFIX}/${RUNTIME_REVISION}/`;
   const path = req.url?.split('?', 1)[0];
-  // An attempt has its own relative import URLs so browser-cached failures can be retried.
-  const file = path?.startsWith(prefix) && /^\d+\/(.+)$/.exec(path.slice(prefix.length))?.[1];
+  // Attempts have independent imports. The settings preview also has its own
+  // Mermaid instance, so an unsaved theme cannot reach conversation renders.
+  const file = path?.startsWith(prefix) && /^(?:preview-)?\d+\/(.+)$/.exec(path.slice(prefix.length))?.[1];
   if (!runtimeFiles.has(file)) {
     res.writeHead(404);
     res.end();

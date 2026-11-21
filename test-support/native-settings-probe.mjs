@@ -5,7 +5,6 @@ import { spawn } from 'node:child_process';
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { effectiveStyle } from '../src/render-config.js';
 
 const [executable, cli, playwrightModule, browserExecutable, mode] = process.argv.slice(2);
 const directory = resolve('.runtime', `native-settings-${Date.now()}`);
@@ -40,9 +39,12 @@ try {
   const errors = [];
   let settingsRequests = 0;
   let diagramRuntimeRequests = 0;
+  let previewRuntimeRequests = 0;
   page.on('request', (request) => {
-    if (new URL(request.url()).pathname === '/dsh-mermaid/settings-runtime.js') settingsRequests++;
-    if (new URL(request.url()).pathname.endsWith('/mermaid-runtime.js')) diagramRuntimeRequests++;
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/dsh-mermaid/settings-runtime.js') settingsRequests++;
+    if (/\/preview-\d+\/mermaid-runtime\.js$/.test(pathname)) previewRuntimeRequests++;
+    else if (pathname.endsWith('/mermaid-runtime.js')) diagramRuntimeRequests++;
   });
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
@@ -88,33 +90,67 @@ try {
     }
   } else {
     assert.equal(settingsRequests, 0, 'settings runtime must stay lazy until the bundle page opens');
+    assert.equal(previewRuntimeRequests, 0, 'the example runtime must stay lazy until the settings page opens');
+    await page.route('**/preview-0/mermaid-runtime.js', (route) => route.fulfill({
+      contentType: 'text/javascript', body: 'throw new Error("Preview module unavailable");',
+    }), { times: 1 });
     await openSettings();
     const editor = page.getByRole('region', { name: '渲染风格' });
+    const preview = editor.getByRole('region', { name: '效果预览' });
+    const sample = preview.getByRole('img', { name: '审核流程示例图' });
+    const waitForFill = (fill) => page.waitForFunction((color) => {
+      const svg = document.querySelector('.dsh-mmd-settings-preview-canvas svg');
+      return svg && [...svg.querySelectorAll('rect, polygon, path')].some((node) => {
+        const paint = getComputedStyle(node);
+        return paint.fill === color || paint.stroke === color;
+      });
+    }, fill);
     assert.equal(await editor.getByLabel('配色主题', { exact: true }).inputValue(), 'forest');
+    assert.equal(await preview.getByRole('group', { name: '预览明暗模式' }).count(), 0, 'fixed themes use a single palette');
+    await preview.getByRole('button', { name: '重试预览' }).click();
+    await sample.waitFor();
+    assert.equal(previewRuntimeRequests, 2, 'a failed module is retried with its own new URL');
     await editor.getByLabel('配色主题', { exact: true }).selectOption('base');
     await editor.getByLabel('配色主题', { exact: true }).selectOption('forest');
     assert.equal(await editor.getByRole('button', { name: '保存', exact: true }).isDisabled(), true, 'returning to the saved theme must be clean');
     await editor.getByRole('button', { name: '载入 Indigo / Slate 示例', exact: true }).click();
+    await preview.getByRole('button', { name: '浅色', exact: true }).click();
+    await waitForFill('rgb(238, 242, 255)');
+    const classicPaths = await sample.locator('path').count();
+    await preview.getByRole('button', { name: '深色', exact: true }).click();
+    await waitForFill('rgb(30, 41, 59)');
     await editor.getByLabel('绘图风格', { exact: true }).selectOption('handDrawn');
+    await page.waitForFunction((count) => document.querySelectorAll('.dsh-mmd-settings-preview-canvas svg path').length > count, classicPaths);
     assert.equal((await (await fetch(`${base}/dsh-mermaid/config.json`)).json()).style.theme, 'forest', 'preset must only stage a draft');
     await editor.getByRole('tab', { name: '浅色', exact: true }).click();
+    assert.equal(await preview.getByRole('button', { name: '浅色', exact: true }).getAttribute('aria-pressed'), 'true');
+    await waitForFill('rgb(238, 242, 255)');
     await editor.getByLabel('基础主色', { exact: true }).fill('#ff0000');
     assert.equal(await editor.getByLabel('节点填充', { exact: true }).inputValue(), '#eef2ff');
     assert.equal(await editor.getByText(/节点填充由 mainBkg 单独指定/).isVisible(), true);
     await editor.locator('summary').filter({ hasText: '高级变量' }).click();
     const json = editor.getByLabel('浅色 JSON', { exact: true });
+    const lastExample = await sample.getAttribute('id');
     await json.fill('{"primaryColor":');
     assert.equal(await editor.getByRole('button', { name: '保存', exact: true }).isDisabled(), true);
     assert.match(await editor.getByRole('alert').innerText(), /JSON/);
+    await preview.getByText('修正配置错误后即可更新预览。', { exact: true }).waitFor();
+    assert.equal(await sample.getAttribute('id'), lastExample, 'an invalid draft must retain the last rendered example');
     await editor.getByRole('tab', { name: '深色', exact: true }).click();
     await editor.getByRole('tab', { name: '浅色', exact: true }).click();
     assert.equal(await json.inputValue(), '{"primaryColor":');
     await json.fill('{"primaryColor":"#ddeeff","primaryTextColor":"#223344","xyChart":{"plotColorPalette":"#ddeeff,#123456"}}');
     assert.equal(await json.isVisible(), true, 'fixing JSON must not collapse the active editor');
     await editor.getByLabel('节点填充', { exact: true }).fill('#e0e7ff');
+    await waitForFill('rgb(224, 231, 255)');
     assert.equal(JSON.parse(await json.inputValue()).xyChart.plotColorPalette, '#ddeeff,#123456');
     await editor.getByRole('tab', { name: '公共', exact: true }).click();
     await editor.getByLabel('字号', { exact: true }).fill('16px');
+    await page.waitForFunction(() => {
+      const svg = document.querySelector('.dsh-mmd-settings-preview-canvas svg');
+      return svg && [...svg.querySelectorAll('foreignObject p, text')]
+        .some((label) => label.textContent.trim() === '提交' && getComputedStyle(label).fontSize === '16px');
+    });
     // Native panel navigation must not erase this editor's uncommitted input.
     await page.getByRole('button', { name: '新建会话', exact: true }).first().click();
     await openSettings();
@@ -133,22 +169,15 @@ try {
     const patchBytes = await readFile(join(profile, 'cordis.patch.yml'));
     assert.equal(patchBytes.subarray(0, 3).equals(Buffer.from([239, 187, 191])), false);
     assert.equal((patchBytes.toString().match(/id: ui-mermaid/g) || []).length, 1);
-    const preview = await browser.newPage();
-    await preview.route(`${base}/settings-fill-check`, (route) => route.fulfill({ contentType: 'text/html', body: '<html><body></body></html>' }));
-    await preview.goto(`${base}/settings-fill-check`);
-    const nodeFills = await preview.evaluate(async (style) => {
-      const { default: runtime } = await import('/dsh-mermaid/mermaid-runtime.js');
-      runtime.initialize({ ...style, startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true });
-      document.body.innerHTML = (await runtime.render('settings-fill', 'flowchart LR\nA[Start]-->B[End]')).svg;
-      return [...document.querySelectorAll('svg rect, svg path, svg polygon')].flatMap((node) => { const paint = getComputedStyle(node); return [paint.fill, paint.stroke]; });
-    }, effectiveStyle(saved.style, false));
-    assert.ok(nodeFills.includes('rgb(224, 231, 255)'), `node fill control must affect the actual flowchart SVG: ${JSON.stringify(nodeFills)}`);
-    await preview.screenshot({ path: join(directory, 'node-fill.png') });
-    await preview.close();
     await editor.getByRole('tab', { name: '浅色', exact: true }).click();
     await editor.locator('summary').filter({ hasText: '高级变量' }).click();
     await page.screenshot({ path: join(directory, 'custom-light.png'), fullPage: true });
     await page.evaluate(() => document.body.setAttribute('data-ds-dark-theme', ''));
+    await page.waitForFunction(() => {
+      const svg = document.querySelector('.dsh-mmd-settings-preview-canvas svg');
+      return svg && [...svg.querySelectorAll('foreignObject p, text')]
+        .some((label) => label.textContent.trim() === '提交' && getComputedStyle(label).color === 'rgb(34, 51, 68)');
+    });
     await page.screenshot({ path: join(directory, 'custom-dark.png'), fullPage: true });
     const collapseSidebar = page.getByRole('button', { name: '收起侧边栏', exact: true });
     if (await collapseSidebar.isVisible()) await collapseSidebar.click();
@@ -194,8 +223,8 @@ try {
     assert.equal(await editor.getByLabel('配色主题', { exact: true }).inputValue(), 'auto');
     assert.equal(await editor.getByRole('button', { name: '保存', exact: true }).isDisabled(), true);
     assert.deepEqual(errors, []);
-    assert.equal(diagramRuntimeRequests, 0, 'editing settings alone must not import Mermaid');
-    const report = { directory, browser: browser.version(), nativeSlot: true, stagedPreset: true, invalidJsonBlocked: true, tabsPreserveDraft: true, navigationPreservesDraft: true, atomicSaveReadback: true, advancedVariablesPreserved: true, reloadPersistence: true, externalConflictPreservesDraft: true, mobileNoHorizontalOverflow: true, lazySettings: true, noDiagramRuntimeForSettings: true, revertedEditsAreClean: true, nodeFillMatchesActualSvg: true, themeRepairPreservesVariables: true, explicitNullDiagnosed: true, unconfiguredNativeFormWorks: true, errors };
+    assert.equal(diagramRuntimeRequests, 0, 'the preview must not import the conversation Mermaid instance');
+    const report = { directory, browser: browser.version(), nativeSlot: true, stagedPreset: true, invalidJsonBlocked: true, tabsPreserveDraft: true, navigationPreservesDraft: true, atomicSaveReadback: true, advancedVariablesPreserved: true, reloadPersistence: true, externalConflictPreservesDraft: true, mobileNoHorizontalOverflow: true, lazySettings: true, isolatedPreviewRuntime: true, previewRetry: true, liveLightAndDarkPreview: true, invalidDraftKeepsPreview: true, revertedEditsAreClean: true, nodeFillMatchesActualSvg: true, themeRepairPreservesVariables: true, explicitNullDiagnosed: true, unconfiguredNativeFormWorks: true, errors };
     await writeFile(join(directory, 'report.json'), JSON.stringify(report, null, 2), 'utf8');
     console.log(JSON.stringify(report, null, 2));
   }

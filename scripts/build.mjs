@@ -46,6 +46,7 @@ const mermaidVersion = JSON.parse(await readFile('node_modules/mermaid/package.j
 await build({
   entryPoints: ['src/settings-runtime.js'], outfile: 'lib/settings-runtime.js',
   bundle: true, minify: true, platform: 'browser', format: 'esm', target: ['chrome120'],
+  define: { __DSH_MERMAID_RUNTIME_REV__: JSON.stringify(runtimeRevision) },
 });
 const settingsRevision = createHash('sha256').update(await readFile('lib/settings-runtime.js')).digest('hex').slice(0, 12);
 

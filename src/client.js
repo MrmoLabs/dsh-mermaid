@@ -7,7 +7,7 @@ import {
 import { resolveLocale, translate } from './i18n.js';
 import { CSS, FALLBACK_CSS } from './styles.js';
 import { CONVERSATION_SESSION, conversationSession, createDiagramDrafts } from './diagram-drafts.js';
-import { DEFAULT_STYLE, effectiveStyle, styleKey } from './render-config.js';
+import { DEFAULT_STYLE, MAX_SOURCE_CHARS, effectiveStyle, initializeMermaid, styleKey } from './render-config.js';
 import { createStyleLoader } from './style-loader.js';
 import { FENCE_SELECTOR, registerNativeFences } from './fence-registration.js';
 import { registerNativeSettings } from './settings-registration.js';
@@ -19,7 +19,6 @@ const STABLE_MS = 300;
 const RENDER_DEBOUNCE_MS = 500;
 const STREAM_PREVIEW_MS = 250;
 const LEGACY_SOURCE_WAIT_MS = 3_000;
-const MAX_SOURCE_CHARS = 50_000;
 const MAX_SOURCE_LINES = 2_000;
 const RUNTIME_LOAD_TIMEOUT_MS = 12_000;
 const RUNTIME_RENDER_TIMEOUT_MS = 15_000;
@@ -345,17 +344,6 @@ function refreshLocale() {
     if (entry) localizeEntry(entry);
   }
   fullscreenViewer?.localize();
-}
-
-function initializeMermaid(runtime, style) {
-  runtime.initialize({
-    startOnLoad: false,
-    securityLevel: 'strict',
-    suppressErrorRendering: true,
-    ...JSON.parse(JSON.stringify(style)),
-    maxTextSize: MAX_SOURCE_CHARS,
-    maxEdges: 2_000,
-  });
 }
 
 function injectCss() {
